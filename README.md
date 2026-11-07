@@ -98,9 +98,3 @@
 
 运行后会生成这些（只在你电脑上，不进仓库）：`settings.json` 设置、`affection.json` 亲密度、`memory.json` / `memory-archive.json` 记忆、`api.json` 本机接口的地址和口令（别给别人）、`errors.log`。
 
-## 许可和分享
-
-- 仓库里只有我们自己写的代码和台词，**不包含模型，也不包含 Live2D 的 SDK 或核心库**。
-- 渲染器编译出来会链接 Live2D 的核心库，只在你自己电脑上编译、自己用，不要分享编译结果（`renderer\build\`）。
-- 模型的使用规则以 UP 主的说明为准，不要把模型再分享出去。
-- 分享这个插件时，`sdk\`、`model\`、`renderer\build\`、`bin\`、`tray\app\` 和你自己的数据文件都不要带上（`.gitignore` 已经排除了）。
