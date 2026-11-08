@@ -28,6 +28,8 @@ internal sealed class Settings
     public bool SkitPausesFollow { get; set; } = true;
     // 启动时先收着：桌宠程序在运行，但她不露面，等用户叫她（show / say / coax）才出场。
     public bool StartHidden { get; set; }
+    // 拖到屏幕边上会弹回来，脸始终留在工作区里（默认）。关掉就能拖出屏幕，只留一小截在外面能拖回来。
+    public bool KeepOnScreen { get; set; } = true;
     // Seconds between the small things she does by herself when nobody talks to her.
     public int IdleSeconds { get; set; } = 40;
     // 到点叫人（本机加，2026-11-08）：按这台电脑的时钟，00:30 起四层哄睡、11:30 午饭提醒；托盘“更多”里能单独关。

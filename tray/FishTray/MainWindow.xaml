@@ -254,6 +254,10 @@
                                     <TextBlock Text="启动时先收起" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="SwStartHidden" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                                 </Grid>
+                                <Grid Margin="0,8" ToolTip="开着：拖到屏幕边会弹回来。关掉：能拖到屏幕外面（会留一小截，方便拖回来）">
+                                    <TextBlock Text="拖到屏幕边弹回来" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwKeepOn" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
                                 <Grid Margin="0,8">
                                     <TextBlock Text="检查插件新版本" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="SwUpdates" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>

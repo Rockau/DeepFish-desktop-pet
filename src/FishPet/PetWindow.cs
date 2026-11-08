@@ -278,6 +278,16 @@ internal sealed partial class PetWindow : Window
         var area = SystemParameters.WorkArea;
         var shape = Shape;
         var bounds = new Rect(Width * shape.Side, Height * shape.HeadTop, Width * (1 - 2 * shape.Side), Height * (shape.HeadAt + .12 - shape.HeadTop));
+        if (!settings.KeepOnScreen)
+        {
+            // 能拖出屏幕：整块桌面（所有显示器）外面最多藏到只剩 60 像素的身子，免得找不回来
+            const double keep = 60;
+            double x = SystemParameters.VirtualScreenLeft, y = SystemParameters.VirtualScreenTop;
+            double r = x + SystemParameters.VirtualScreenWidth, b = y + SystemParameters.VirtualScreenHeight;
+            Left = Math.Clamp(Left, x - bounds.Right + keep, Math.Max(x - bounds.Right + keep, r - bounds.Left - keep));
+            Top = Math.Clamp(Top, y - bounds.Bottom + keep, Math.Max(y - bounds.Bottom + keep, b - bounds.Top - keep));
+            return;
+        }
         Left = Math.Clamp(Left, area.Left - bounds.Left, Math.Max(area.Left - bounds.Left, area.Right - bounds.Right));
         Top = Math.Clamp(Top, area.Top - bounds.Top, Math.Max(area.Top - bounds.Top, area.Bottom - bounds.Bottom));
     }
@@ -1245,6 +1255,11 @@ internal sealed partial class PetWindow : Window
                 if (args.TryGetProperty("check_updates", out var check) && check.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.CheckUpdates = check.GetBoolean();
                 if (args.TryGetProperty("follow_mouse", out var follow) && follow.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.FollowMouse = follow.GetBoolean();
                 if (args.TryGetProperty("start_hidden", out var startHidden) && startHidden.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.StartHidden = startHidden.GetBoolean();
+                if (args.TryGetProperty("keep_on_screen", out var keepOn) && keepOn.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    settings.KeepOnScreen = keepOn.GetBoolean();
+                    if (settings.KeepOnScreen) { Clamp(); settings.Left = Left; settings.Top = Top; }
+                }
                 if (args.TryGetProperty("birthday", out var birth) && birth.ValueKind == JsonValueKind.String)
                 {
                     var day = birth.GetString();
@@ -1427,7 +1442,7 @@ internal sealed partial class PetWindow : Window
     private object State() => new
     {
         shape = settings.Shape, shapeLabel = Shape.Label, wearing = Wearing(), fps = settings.Fps, scale = settings.Scale, tex_scale = settings.TexScale, bubble_scale = settings.BubbleScale, bubble_seconds = settings.BubbleSeconds,
-        hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, start_hidden = settings.StartHidden, follow_mouse = settings.FollowMouse,
+        hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, start_hidden = settings.StartHidden, keep_on_screen = settings.KeepOnScreen, follow_mouse = settings.FollowMouse,
         check_updates = settings.CheckUpdates, coax_sleep = settings.CoaxSleep, coax_lunch = settings.CoaxLunch, birthday = settings.Birthday,
         update = updates.Latest is { } found ? new { current = found.Current, latest = found.Latest, behind = found.Behind, changes = found.Changes, guide = found.Guide } : null,
         idle_seconds = settings.IdleSeconds, position = new { Left, Top }, saying = speech.IsSaying, reaction = behavior.Showing, trouble,
