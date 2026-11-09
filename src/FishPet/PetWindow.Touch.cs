@@ -12,7 +12,7 @@ namespace FishPet;
 //   · 右键按住在她头上（头 + 整张脸）移动 = 摸头：不播固定动画，每一帧按鼠标的位置驱动头的弹簧，像真的在摸；
 //     头朝着和手相反的方向转、眼睛看着手，靠近两侧单闭眼、摸到脸上闭双眼；鼠标变成一只白手（HandWindow）。
 //   · 左键拖她：按拖动速度实时有惯性（横向甩、竖向拉伸压扁）；转圈或甩得太狠会累积“头晕”，放下后晕一会儿。
-//   · 鼠标在她身上停约 2 秒：做个轻轻的小反应，冷却 10 秒。
+//   · 鼠标在她身上停约 10 秒：做个轻轻的小反应，冷却 30 秒。
 // 台词在 stroke.txt / hover.txt / dizzy.txt（和 touch.txt 同格式，一起读进 touchLines）。
 internal sealed partial class PetWindow
 {
@@ -72,7 +72,15 @@ internal sealed partial class PetWindow
         if (dizzyOn) { StepDizzy(now); busy = true; }
         if (stroking) { StepStroke(dt, now); busy = true; }
         if (dragging && dragged) { StepDrag(dt); busy = true; }
-        if (!StepSprings(dt) && !busy) touchTimer?.Stop();
+        bool moving = StepSprings(dt);
+        // 松手后等弹簧回稳，再演“摸后”的反应（弹簧和反应都会占同一批参数，不能同时）；最多等 1.5 秒。
+        if (afterStroke != null)
+        {
+            busy = true;
+            if (stroking || dragging || dizzyOn || behavior.Quiet) { afterStroke = null; if (!stroking && !dizzyOn) behavior.Touching = false; }
+            else if (!moving || now > afterStrokeAt) PlayAfterStroke();
+        }
+        if (!moving && !busy) touchTimer?.Stop();
     }
 
     // 屏幕上的 DIP 坐标。
@@ -133,6 +141,7 @@ internal sealed partial class PetWindow
         stroking = true;
         strokeTravel = strokeMoving = strokeMaxTime = strokeHeadTime = 0;
         strokeVel = default; strokeFace = null; strokeSide = 0;
+        afterStroke = null;
         GetCursorPos(out var p);
         strokeLast = ScreenDip(p);
         CaptureMouse();
@@ -161,6 +170,11 @@ internal sealed partial class PetWindow
         EndStroke();
     }
 
+    // 松手后的反应：摸了多久分三档（和摸的时候的三档一样：3 秒、8 秒），脸都会红一下。
+    private (string Mood, string Key)? afterStroke;
+    private DateTime afterStrokeAt;
+    private bool afterStrokeBond;
+
     private void EndStroke()
     {
         if (!stroking) return;
@@ -169,21 +183,36 @@ internal sealed partial class PetWindow
         Mouse.OverrideCursor = null;
         handWindow?.Hide();
         strokeFace = null;
-        Face(NoSets, []);
-        AimAllZero();
-        springK = 120; springC = 11; // 松手后回弹几下再停
-        if (!dizzyOn) behavior.Touching = false;
         double held = strokeMaxTime;
-        Happened("stroke_end", new { seconds = Math.Round(strokeMoving, 1) });
-        // 真的摸了一会儿才念话；摸头加亲密度最多 60 秒一次，别按着刷分。
-        if (strokeMoving < 1.2) return;
-        if (DateTime.UtcNow - lastStrokeGain > TimeSpan.FromSeconds(60))
+        // 只有真的摸了几下才有“摸后”的反应（按下去没动不算）。
+        bool touched = strokeTravel > 8 && strokeMoving >= .4 && !dizzyOn;
+        Face(NoSets, touched ? ["脸红"] : []); // 脸红一路带到摸后的反应里，中间不褪
+        AimAllZero();
+        springK = 200; springC = 28; // 松手后头很快回正（临界阻尼），再接摸后的反应
+        if (!dizzyOn && !touched) behavior.Touching = false;
+        Happened("stroke_end", new { seconds = Math.Round(strokeMoving, 1), stage = held >= 8 ? 3 : held >= 3 ? 2 : 1 });
+        if (!touched) return;
+        // 摸头加亲密度最多 60 秒一次，别按着刷分；摸得太短（不到 1.2 秒）不加。
+        afterStrokeBond = strokeMoving >= 1.2;
+        afterStroke = held >= 8 ? ("摸后腻歪", "抚摸头3") : held >= 3 ? ("摸后不舍", "抚摸头2") : ("摸后失落", "抚摸头1");
+        afterStrokeAt = DateTime.UtcNow.AddSeconds(1.5);
+        StartTouchTimer();
+    }
+
+    private void PlayAfterStroke()
+    {
+        var (mood, key) = afterStroke!.Value;
+        afterStroke = null;
+        behavior.Touching = false;
+        Face(NoSets, []);
+        YieldMutter();
+        behavior.Show(mood, DateTime.UtcNow, force: true);
+        if (afterStrokeBond && DateTime.UtcNow - lastStrokeGain > TimeSpan.FromSeconds(60))
         {
             lastStrokeGain = DateTime.UtcNow;
             BondGain("摸头");
         }
-        if (speech.IsSaying || voice != null) return;
-        SayTouch(held >= 8 ? "抚摸头3" : held >= 3 ? "抚摸头2" : "抚摸头1");
+        if (!speech.IsSaying && voice == null) SayTouch(key);
     }
 
     // 脸：side 是手靠近头的哪一侧（屏幕上的），face 为 true 表示手在脸上；t 是摸了多久（秒）。
@@ -370,7 +399,7 @@ internal sealed partial class PetWindow
 
     private string? hoverZone;
     private DateTime hoverSince, hoverCooldownUntil;
-    private static readonly TimeSpan HoverAfter = TimeSpan.FromSeconds(2), HoverCooldown = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan HoverAfter = TimeSpan.FromSeconds(10), HoverCooldown = TimeSpan.FromSeconds(30);
 
     private void HoverMove(object sender, MouseEventArgs e)
     {

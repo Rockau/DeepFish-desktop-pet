@@ -207,7 +207,8 @@ void VerifyLive2DBehavior()
     // She jumps only when startled, and heart eyes are for love, which none of her reflexes is (the owner, 2026-11-02).
     Check(Behavior.Moods.Where(mood => mood.Value.Motion!.Any(track => track.Id == "ViewY")).Select(mood => mood.Key).Order().SequenceEqual(["打瞌睡", "震惊"]), "jumping only in fright");
     // 例外是亲密度满档时戳裙子的“娇羞”：那就是爱意（用户定的，2026-11-08）。
-    Check(Behavior.Moods.Where(mood => mood.Key != "娇羞").All(mood => !mood.Value.Expressions.Contains("爱心眼")), "no heart eyes without love");
+    // 摸头摸满 8 秒后松手的“摸后腻歪”也是爱意，同样可以有爱心眼（用户定的，2026-11-10）。
+    Check(Behavior.Moods.Where(mood => mood.Key is not ("娇羞" or "摸后腻歪")).All(mood => !mood.Value.Expressions.Contains("爱心眼")), "no heart eyes without love");
     Check(Behavior.Zone("small", .5, .05, worn) == "head" && Behavior.Zone("small", .5, .24, worn) == "face", "small head and face");
     Check(Behavior.Zone("small", .5, .5, worn) == "skirt" && Behavior.Zone("small", .85, .75, worn) == "tail", "small skirt and tail");
     Check(Behavior.Zone("small", .22, .58, worn) == "hand" && Behavior.Zone("small", .5, .8, worn) == "body", "small hand and legs");
@@ -290,6 +291,8 @@ void VerifyLive2DBehavior()
     dazed.Touching = false;
     foreach (var zone in new[] { "head", "face", "hand", "skirt", "tail", "body" })
         Check(Behavior.Moods.ContainsKey(Behavior.HoverMood(zone)), "a hover reaction for " + zone);
+    foreach (var after in new[] { "摸后失落", "摸后不舍", "摸后腻歪" })
+        Check(Behavior.Moods.TryGetValue(after, out var afterMood) && afterMood.Expressions.Contains("脸红"), after + " blushes");
     foreach (var shape in Shape.All)
     {
         var box = Behavior.HeadBox(shape.Id);
