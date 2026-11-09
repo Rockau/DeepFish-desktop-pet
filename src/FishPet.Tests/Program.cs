@@ -10,6 +10,7 @@ VerifyIdleSelfTalk();
 VerifyConditions();
 VerifyBond();
 VerifyMemory();
+VerifyMemoryView();
 VerifyAlarms();
 Console.WriteLine($"FishPet: {checks} checks passed.");
 
@@ -271,12 +272,29 @@ void VerifyLive2DBehavior()
     live2d.Tick(start.AddSeconds(14), false, 40);
     sent.Clear();
     live2d.DragStart();
-    Check(live2d.Showing == null && Said("exp 圈圈眼 1") && Said("set ParamMouthOpenY 0.35") && sent.Any(command => command.StartsWith("animloop ")), "dragged she goes dizzy and dangles");
+    Check(live2d.Showing == null && Said("exp 圈圈眼 1") && Said("set ParamMouthOpenY 0.35") && !sent.Any(command => command.StartsWith("animloop ")), "dragged she goes dizzy and hangs (the swing is driven live by PetWindow.Touch now)");
     live2d.DragEnd(start.AddSeconds(16)); live2d.DragEnd(start.AddSeconds(16.1));
     Check(live2d.Showing == "落地" && sent.Count(command => command.StartsWith("anim ViewSquash ")) == 1 && Said("animstop") && Said("clear JawOpen"), "and lands once");
     Check(!Said("exp 圈圈眼 0"), "still dizzy as she lands");
     live2d.Tick(start.AddSeconds(17.3), false, 40);
     Check(sent.Count(command => command == "exp 圈圈眼 0") == 1, "and blinks it away");
+    // 本机加（2026-11-10）：转晕了放下，不播“落地”（头晕由 PetWindow.Touch 接手）；抚摸/头晕期间待机小动作别插进来；悬停的小反应每个部位都有。
+    var dazed = new Behavior(sent.Add, () => worn, new Random(5));
+    dazed.Resume(start, 1);
+    dazed.DragStart(); sent.Clear();
+    dazed.DragEnd(start.AddSeconds(20), dizzy: true);
+    Check(dazed.Showing == null && Said("animstop") && Said("exp 圈圈眼 1") && !sent.Any(command => command.StartsWith("anim ViewSquash ")), "dazed she does not play the plain landing");
+    dazed.Touching = true; sent.Clear();
+    dazed.Tick(start.AddSeconds(500), false, 1);
+    Check(sent.Count == 0 && dazed.Showing == null, "no small move while she is being stroked or dizzy");
+    dazed.Touching = false;
+    foreach (var zone in new[] { "head", "face", "hand", "skirt", "tail", "body" })
+        Check(Behavior.Moods.ContainsKey(Behavior.HoverMood(zone)), "a hover reaction for " + zone);
+    foreach (var shape in Shape.All)
+    {
+        var box = Behavior.HeadBox(shape.Id);
+        Check(box.Rx > 0 && box.Ry > 0 && box.Y - box.Ry > 0 && box.Y + box.Ry < .6, "a head box inside the frame for " + shape.Id);
+    }
     Check(Behavior.Moods["告别"].Gesture != null && Behavior.Moods["告别"].Motion!.Any(track => track.Id == "EyeOpen"), "a maid's greeting and goodbye");
 
     var right = new Behavior(sent.Add, () => worn, new Random(3));
@@ -734,10 +752,69 @@ void VerifyMemory()
     var src = AppContext.BaseDirectory;
     while (src != null && !Directory.Exists(Path.Combine(src, "src", "FishPet"))) src = Path.GetDirectoryName(src);
     var code = Path.Combine(src!, "src", "FishPet");
-    var touches = Directory.GetFiles(code, "*.cs").Where(file => !file.EndsWith("Memory.cs"))
+    var touches = Directory.GetFiles(code, "*.cs").Where(file => !file.EndsWith("Memory.cs") && !file.EndsWith("MemoryView.cs")) // MemoryView 只拿到条目列表，由 VerifyMemoryView 单独守
         .SelectMany(file => File.ReadAllLines(file).Where(line => line.Contains("MemoryCommand") || line.Contains("MemoryState") || line.Contains("memoryBook") || line.Contains("MemoryBook"))).ToArray();
     Check(touches.Length == 2 && touches.Any(line => line.Contains("return MemoryCommand(name, args)")) && touches.Any(line => line.Contains("memory = MemoryState()")), "only the three tools and get_state's count touch the notebook");
     Check(File.ReadAllText(Path.Combine(code, "PetWindow.Memory.cs")).Contains("MemoryState() => new { count = Memory.Count, archived = Memory.Archived }"), "get_state carries only the counts");
+    Directory.Delete(dir, true);
+}
+
+// 记忆小本本的视图和变更记录（本机加，2026-11-10）：排成 Markdown、写不好也不出错、记录带“改之前”、不拖累小本本本身。
+void VerifyMemoryView()
+{
+    var dir = Path.Combine(Path.GetTempPath(), "fish-memview-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(dir);
+    var t = new DateTime(2026, 11, 10, 10, 0, 0, DateTimeKind.Local);
+    var book = MemoryBook.Load(null, null);
+    Check(MemoryView.Render(book.Items, t).Contains("还没有记什么"), "an empty notebook says so");
+
+    book.Remember("爱吃鱼", null, "偏好·食物", 3, null, null, "ai", t);
+    book.Remember("养了一只猫", "事实", null, null, "guess", null, "ai", t.AddMinutes(1));
+    book.Remember("考试", "日程", null, null, null, "2026-11-12", "ai", t.AddMinutes(2));
+    book.Remember("生日", "纪念日", null, null, null, "10-21", "ai", t.AddMinutes(3));
+    book.Remember("旅行", "日程", null, null, null, "2026-11-11", "ai", t.AddMinutes(4));
+    var md = MemoryView.Render(book.Items, t);
+    Check(md.Contains("现有 5 条") && md.IndexOf("## 偏好") < md.IndexOf("## 事实") && md.IndexOf("## 事实") < md.IndexOf("## 日程") && md.IndexOf("## 日程") < md.IndexOf("## 纪念日"), "grouped by category in a fixed order");
+    Check(md.Contains("爱吃鱼 · 偏好·食物 · 很重要") && md.Contains("养了一只猫 · 她猜的") && md.Contains("10-21　生日"), "each line carries its notes");
+    Check(md.IndexOf("2026-11-11　旅行") is var first and >= 0 && first < md.IndexOf("2026-11-12　考试"), "schedules are listed by date");
+    Check(book.Items.All(item => md.Contains("`" + item.Id + "`")), "every memory shows its id so it can be named");
+
+    // 写盘：整份换掉、不留临时文件；路径是 null 或写不进去都不出错
+    string view = Path.Combine(dir, "memory.md");
+    MemoryView.Export(view, book.Items, t);
+    Check(File.ReadAllText(view) == md && !File.Exists(view + ".tmp"), "exported whole, no temp file left behind");
+    book.Forget(book.Items.First(item => item.Content == "爱吃鱼").Id, null, null, t.AddMinutes(10));
+    MemoryView.Export(view, book.Items, t.AddMinutes(10));
+    Check(!File.ReadAllText(view).Contains("爱吃鱼") && File.ReadAllText(view).Contains("现有 4 条"), "a forgotten memory leaves the view");
+    MemoryView.Export(null, book.Items, t);
+    MemoryView.Export(Path.Combine(dir, "no", "such", "folder", "memory.md"), book.Items, t);
+    MemoryView.Log(null, "forget", "m1", null, "x", "said", t);
+    MemoryView.Log(Path.Combine(dir, "no", "such", "folder", "log.jsonl"), "forget", "m1", null, "x", "said", t);
+
+    // 变更记录：一次一行，纠正带着改之前的，不带的字段不写，中文不转义
+    string log = Path.Combine(dir, "memory-log.jsonl");
+    MemoryView.Log(log, "remember", "m1", "爱吃鱼", null, "said", t);
+    MemoryView.Log(log, "correct", "m1", "爱吃鲈鱼", "爱吃鱼", "said", t.AddMinutes(1));
+    MemoryView.Log(log, "forget", "m1", null, "爱吃鲈鱼", "said", t.AddMinutes(2));
+    var lines = File.ReadAllLines(log);
+    var rows = lines.Select(line => System.Text.Json.JsonDocument.Parse(line).RootElement).ToArray();
+    Check(lines.Length == 3 && rows[0].GetProperty("t").GetString() == "2026-11-10T10:00:00", "one line per change, with the time");
+    Check(rows[1].GetProperty("op").GetString() == "correct" && rows[1].GetProperty("before").GetString() == "爱吃鱼" && rows[1].GetProperty("content").GetString() == "爱吃鲈鱼", "a correction keeps what it replaced");
+    Check(!rows[0].TryGetProperty("before", out _) && !rows[2].TryGetProperty("content", out _) && lines[0].Contains("爱吃鱼"), "empty fields are left out and Chinese is written as it is");
+
+    // 只追加，超过上限才丢掉最老的一半，最新的一行还在
+    string big = Path.Combine(dir, "big-log.jsonl");
+    for (int i = 0; i < 40; i++) MemoryView.Log(big, "remember", "m" + i, "第" + i + "件事", null, "said", t, limit: 1000);
+    Check(new FileInfo(big).Length <= 1000 && File.ReadAllLines(big)[^1].Contains("\"id\":\"m39\""), "an overgrown log drops its oldest half and keeps the newest line");
+
+    // 硬规矩：它只拿到条目列表，不碰小本本本身；查（recall）不写视图也不写记录
+    var src = AppContext.BaseDirectory;
+    while (src != null && !Directory.Exists(Path.Combine(src, "src", "FishPet"))) src = Path.GetDirectoryName(src);
+    var code = Path.Combine(src!, "src", "FishPet");
+    Check(!File.ReadAllLines(Path.Combine(code, "MemoryView.cs")).Any(line => line.Contains("memoryBook") || line.Contains("MemoryCommand") || line.Contains("MemoryState")), "the view never reaches into the notebook");
+    var window = File.ReadAllText(Path.Combine(code, "PetWindow.Memory.cs"));
+    var recall = window[window.IndexOf("case \"recall\":")..window.IndexOf("case \"forget\":")];
+    Check(!recall.Contains("MemoryView"), "looking things up writes neither the view nor the log");
     Directory.Delete(dir, true);
 }
 

@@ -85,6 +85,7 @@ internal sealed class Player : IDisposable
                 int width = BitConverter.ToInt32(header, 4), height = BitConverter.ToInt32(header, 8);
                 if (data.Length != width * height * 4) data = new byte[width * height * 4];
                 await stream.ReadExactlyAsync(data, token);
+                Recorder.Frame(data, width, height); // 开发用录制：没在录时只是一次判空
                 // Never reuse the frame buffer before the dispatcher has copied it.
                 await image.Dispatcher.InvokeAsync(() =>
                 {

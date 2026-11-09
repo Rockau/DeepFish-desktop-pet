@@ -37,3 +37,9 @@ hooks/**/sessions.json
 .codex/
 .cursor/
 .claude/
+
+# 本机的记忆视图和变更记录、开发用录制和草稿（里面有用户自己的事或本机路径）
+memory.md
+memory-log.jsonl
+record/
+dev/

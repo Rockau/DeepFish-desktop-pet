@@ -56,9 +56,13 @@ internal sealed class BubbleWindow : Window
         FontFamily = new FontFamily("Microsoft YaHei UI"), LineHeight = 22,
     };
 
+    // 开发用录制里这个气泡叫什么（"speech" / "mutter"），null 就不录。
+    internal string? RecordAs { get; init; }
+
     internal BubbleWindow(Window pet, Func<double> headTop)
     {
         this.pet = pet; this.headTop = headTop;
+        IsVisibleChanged += (_, _) => { if (!IsVisible && RecordAs != null) Recorder.BubbleHidden(RecordAs); };
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         ShowActivated = false; ShowInTaskbar = false; Topmost = true; SizeToContent = SizeToContent.WidthAndHeight;
         Content = new Bubble { MaxWidth = 300, Child = Text };
@@ -87,9 +91,13 @@ internal sealed class BubbleWindow : Window
     internal void Say(string text)
     {
         Text.Text = text;
+        if (RecordAs != null) Recorder.Bubble(RecordAs, text);
         if (!IsVisible && !Quiet) Show();
         Place();
     }
+
+    // 新的一句开始了：录制里下一次出字算新气泡（哪怕字恰好接得上）。
+    internal void NewLine() { if (RecordAs != null) Recorder.BubbleNewLine(RecordAs); }
 
     internal void Place()
     {
@@ -141,6 +149,7 @@ internal sealed class Speech
     internal void Say(Line said)
     {
         line = said; shown = 0; hideAt = DateTime.MaxValue;
+        bubble.NewLine();
         elapsed.Restart();
         timer.Start();
         Tick();

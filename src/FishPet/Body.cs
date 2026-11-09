@@ -113,7 +113,9 @@ internal sealed partial class Body
         ["摇摆一"] = (_, s, _) => Dance(s, Enumerable.Repeat(.45, 12).ToArray(), [1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1], false),
         // 摇摆二（用户，2026-11-08 改）：不再左右甩头，改成可爱的歪头、扭头、耸肩，跟着拍子一下一下颠，节奏是左右左右左右（用户改，比第一段慢：6 拍走完原来 8 拍的时长）。
         ["摇摆二"] = (_, s, _) => Groove(s, Enumerable.Repeat(.4 * 8 / 6, 6).ToArray(), [1, -1, 1, -1, 1, -1]),
-        ["慢摇"] = (_, s, _) => Dance(s, [.7, .9, 1.1], [1, -.7, .4], false),
+        // 慢摇（用户，2026-11-09 改）：不再用第一段的转身甩头，改成摇摆二的动作（歪头、扭头、耸肩、颠一下）接着往下做，
+        // 从第二段停下的那一边（右）的下一拍（左）接着来，越摇越慢越小，渐渐停下。拍子和总长都没变（3.86 秒）。
+        ["慢摇"] = (_, s, _) => Groove(s, [.7, .9, 1.1], [1, -.7, .4]),
         ["左右张望"] = (_, s, _) => new(Move: [("ParamEyeBallX", Scale("0:0 .15:.8 .75:.8 1:-.8 1.6:-.8 1.9:0", s)), ("FaceAngleX", Scale("0:0 .15:8 .75:8 1:-8 1.6:-8 1.9:0", s))]),
     };
 
@@ -178,14 +180,15 @@ internal sealed partial class Body
             keys.Add((end + lag, 0));
             return string.Join(' ', keys.Select(key => Number(key.Item1) + ":" + Number(key.Item2 * size)));
         }
-        // 每拍一颠：拍点上落到 down，两拍中间回到 up。
+        // 每拍一颠：拍点上落到 down，两拍中间回到 up。幅度跟着这一拍的 |hits| 走（摇摆二每拍都是 ±1，所以和以前完全一样；
+        // 慢摇越摇越小时，颠的幅度也跟着变小）。
         string Bounce(double down, double up, double lag = 0)
         {
             var keys = new List<(double, double)> { (0, 0) };
             for (int i = 0; i < hits.Length; i++)
             {
-                keys.Add((times[i] + lag, down));
-                if (i + 1 < hits.Length) keys.Add(((times[i] + times[i + 1]) / 2 + lag, up));
+                keys.Add((times[i] + lag, down * Math.Abs(hits[i])));
+                if (i + 1 < hits.Length) keys.Add(((times[i] + times[i + 1]) / 2 + lag, up * (Math.Abs(hits[i]) + Math.Abs(hits[i + 1])) / 2));
             }
             keys.Add((end + lag, 0));
             return string.Join(' ', keys.Select(key => Number(key.Item1) + ":" + Number(key.Item2 * size)));

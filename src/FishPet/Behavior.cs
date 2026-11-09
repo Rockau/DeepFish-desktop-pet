@@ -54,6 +54,13 @@ internal sealed class Behavior
         ["歪头"] = new([], [("FaceAngleZ", 18), ("FaceAngleX", 5), ("BrowInnerUp", .6), ("ParamBrowLY", .4), ("ParamBrowRY", .4), ("ParamEyeBallY", .2)], 3.2, [("FaceAngleZ", "0:0 .25:4 .5:0"), ("EyeOpen", "0:0 1.1:0 1.2:-1 1.32:0 1.48:-1 1.6:0 3.2:0")], Pushed: true),
         ["发呆"] = new([], [], 4.6, [("EyeOpen", "0:0 .9:-.45 3.1:-.5 3.25:-1 3.4:0 4.6:0"), ("ParamEyeBallY", "0:0 .9:.45 3.1:.45 3.4:0"), ("ParamMouthOpenY", "0:0 1:.3 3.1:.3 3.3:0"), ("JawOpen", "0:0 1:.18 3.1:.18 3.3:0"), ("FaceAngleY", "0:0 1:-3 3.1:-4 3.35:3 3.8:0"), ("FaceAngleX", "0:0 3.2:0 3.35:-7 3.55:6 3.75:-3 4:0"), ("ViewSquash", "0:0 1:.015 3.1:.015 3.35:0")]),
         ["叹气"] = new([], [], 3.6, [("LeanInput", "0:0 .8:5 1.8:-7 2.8:-6 3.5:0"), ("FaceAngleY", "0:0 .8:7 1.8:-9 2.8:-8 3.5:0"), ("ViewSquash", "0:0 .8:-.02 1.2:-.02 1.9:.03 2.8:.025 3.5:0"), ("EyeOpen", "0:0 .8:-.2 1.8:-.6 2.8:-.55 3.5:0"), ("ParamMouthOpenY", "0:0 1.1:0 1.4:.3 2.2:.12 2.6:0"), ("MouthFunnel", "0:0 1.1:0 1.4:.9 2.2:.6 2.6:0"), ("BrowInnerUp", "0:0 1:.6 2.8:.6 3.5:0")]),
+        // 鼠标在她身上停了约 2 秒时的小反应（本机加，2026-11-10）：幅度都很轻，对应 hover.txt 的台词。
+        ["悬停头"] = new([], [("FaceAngleZ", 11), ("FaceAngleX", -3), ("ParamEyeBallY", .3), ("BrowInnerUp", .4), ("EyeSmile", .35)], 2.8, [("FaceAngleZ", "0:0 .3:3 .8:-2 1.4:2 2.8:0")], Pushed: true),
+        ["悬停脸"] = new(["脸红"], [("ParamMouthForm", .5), ("ParamEyeBallX", .4), ("ParamEyeBallY", -.2), ("FaceAngleY", -4)], 2.6, [("EyeOpen", "0:0 .15:-1 .3:0 1.1:0 1.25:-1 1.4:0 2.6:0"), ("ViewSquash", "0:0 .3:.012 2.2:.01 2.6:0")], Pushed: true),
+        ["悬停手"] = new([], [("EyeSmile", .8), ("ParamMouthForm", 1), ("FaceAngleY", 4), ("FaceAngleZ", -4)], 2.8, [("FaceAngleZ", "0:0 .4:-5 1:-2 1.6:-5 2.8:0")], ("默认手切举手", "举手切默认手")),
+        ["悬停裙"] = new([], [("ParamEyeBallX", .7), ("ParamEyeBallY", -.3), ("ParamMouthForm", -.3), ("ParamBrowLY", -.3), ("ParamBrowRY", -.3), ("FaceAngleX", -8)], 2.6, [("ViewSquash", "0:0 .12:.025 .5:.012 2.2:.01 2.6:0")], Pushed: true),
+        ["悬停尾"] = new(["流冷汗"], [("ParamEyeBallX", .7), ("ParamEyeBallY", -.3), ("ParamMouthForm", -.4), ("FaceAngleX", -10), ("BrowInnerUp", .4)], 2.6, [("ViewSquash", "0:0 .08:.03 .4:.01 2.2:.01 2.6:0"), ("FaceAngleY", "0:0 .1:-5 .5:0 2.6:0")], Pushed: true),
+        ["悬停身"] = new([], [("FaceAngleZ", 9), ("ParamEyeBallY", .3), ("BrowInnerUp", .3)], 2.6, [("FaceAngleX", "0:0 .5:3 1.1:-2 1.8:2 2.6:0")], Pushed: true),
         ["玩狗尾草"] = new([], [("ParamEyeBallX", -.7), ("ParamEyeBallY", -.3), ("EyeOpen", .75), ("EyeSmile", 1), ("ParamMouthForm", 1)], 5.4, [("FaceAngleX", "0:0 .5:0 1.2:-10 4.7:-10 5.4:0"), ("FaceAngleZ", "0:0 .5:0 1.2:8 1.9:3 2.6:9 3.3:3 4:9 4.7:6 5.4:0"), ("FaceAngleY", "0:0 .5:0 1.2:-5 4.7:-5 5.4:0")], ("狗尾草切换出来", "狗尾草切回默认手")),
     };
     // What she does by herself when left alone. A hand only comes up as part of one of these: a gesture on
@@ -61,8 +68,7 @@ internal sealed class Behavior
     private static readonly string[] IdleMoods = ["张望", "哼歌", "害羞", "得意", "思考", "打哈欠", "打瞌睡", "歪头", "发呆", "叹气", "玩狗尾草"];
     private static readonly HashSet<string> Sleepy = ["打哈欠", "打瞌睡"];
     internal static int IdleWeight(string name, int hour) => Sleepy.Contains(name) && hour is >= 23 or < 6 ? 4 : 1;
-    // Dangling from the mouse: dizzy, mouth open in an "ah", brows up, swaying. 落地 when let go.
-    private static readonly (string Id, string Keys)[] Dangling = [("FaceAngleZ", "0:0 .6:10 1.8:-10 2.4:0"), ("FaceAngleX", "0:0 .6:-4 1.8:4 2.4:0")];
+    // 拎着时：嘴张成“啊”、眉毛抬起、圈圈眼；晃动由 PetWindow.Touch 实时驱动。落地见 DragEnd。
     private static readonly (string Id, double Value)[] Hanging = [("ParamMouthOpenY", .35), ("JawOpen", .2), ("MouthFunnel", .3), ("BrowInnerUp", .8)];
 
     private readonly Action<string> send;
@@ -79,6 +85,21 @@ internal sealed class Behavior
     internal string? Showing { get; private set; }
     // Her own body language (Body) under the reflexes: a hand she has up stays, and what a
     // reflex held and let go of is hers again once it ends.
+    // 用户正按着右键抚摸、或她头晕着：待机的抽签和小动作都别插进来（本机加，2026-11-10）。
+    internal bool Touching { get; set; }
+    // 把正演着的小反应收掉（抚摸开始、头晕开始时用）。
+    internal void Interrupt() => EndMood();
+    internal static string HoverMood(string zone) => zone switch
+    {
+        "head" => "悬停头", "face" => "悬停脸", "hand" => "悬停手", "skirt" => "悬停裙", "tail" => "悬停尾", _ => "悬停身",
+    };
+    // 头部范围（占窗口的比例）：中心 (X, Y)、半宽 Rx、半高 Ry。右键摸头时那只手按它来倾斜，鼠标在这个椭圆里就算摸头。
+    internal static (double X, double Y, double Rx, double Ry) HeadBox(string shape) => shape switch
+    {
+        "chibi" => (.5, .31, .26, .22),
+        "full" => (.5, .19, .12, .085),
+        _ => (.5, .225, .19, .095),
+    };
     internal Func<bool>? HandBusy { get; init; }
     internal Action? Ended { get; init; }
     // 每次待机小动作开始时，把动作名交出去（PetWindow 用来触发自言自语）。
@@ -195,16 +216,18 @@ internal sealed class Behavior
         dragging = true;
         send("exp 圈圈眼 1");
         foreach (var (id, value) in Hanging) send(FormattableString.Invariant($"set {id} {value}"));
-        foreach (var (id, keys) in Dangling) send($"animloop {id} {keys}");
+        // 拎着时的晃动不再放固定循环，交给 PetWindow.Touch 按拖动速度实时驱动（惯性、头晕）。
     }
 
     // The dizzy eyes stay on through the landing and go with a blink.
-    internal void DragEnd(DateTime now)
+    // dizzy：转晕了，不播“落地”，头晕那一段由 PetWindow.Touch 接手（圈圈眼也由它收）。
+    internal void DragEnd(DateTime now, bool dizzy = false)
     {
         if (!dragging) return;
         dragging = false;
         send("animstop");
         foreach (var (id, _) in Hanging) send($"clear {id}");
+        if (dizzy) { send("exp 圈圈眼 1"); return; }
         Show("落地", now, force: true);
     }
 
@@ -246,7 +269,7 @@ internal sealed class Behavior
     internal void Tick(DateTime now, bool speaking, int intervalSeconds)
     {
         if (mood != null && now >= moodUntil) EndMood();
-        if (speaking || dragging || mood != null) return;
+        if (speaking || dragging || Touching || mood != null) return;
         var local = now.ToLocalTime();
         // 整点报时：每个钟点最多一次，不受“隔多久做一个小动作”的限制。
         if (!Quiet && local.Minute < ChimeMinutes && lastChime != (local.Date, local.Hour) && ChimeTexts is { } chimes && chimes(local) is { Length: > 0 } hourly && ChimeBlocked?.Invoke() != true)

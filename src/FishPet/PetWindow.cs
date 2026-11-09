@@ -122,10 +122,10 @@ internal sealed partial class PetWindow : Window
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
         image.Opacity = 0;
         Content = new Grid { Children = { image } };
-        bubble = new BubbleWindow(this, () => Height * Shape.HeadTop);
+        bubble = new BubbleWindow(this, () => Height * Shape.HeadTop) { RecordAs = test ? null : "speech" };
         bubble.Quiet = test;
         bubble.Scale = settings.BubbleScale;
-        mutter = new BubbleWindow(this, () => Height * Shape.HeadTop) { Scale = 0.85 };
+        mutter = new BubbleWindow(this, () => Height * Shape.HeadTop) { Scale = 0.85, RecordAs = test ? null : "mutter" };
         mutter.Quiet = test;
         LoadMutterFile();
         LoadSkits();
@@ -153,6 +153,11 @@ internal sealed partial class PetWindow : Window
         {
             Start();
             LaunchTray();
+            if (!test) // 开发用透明帧导出：插件\record\on.json 在就录（Recorder.cs，本机加 2026-11-08）
+            {
+                Recorder.BoostChanged += ApplySize;
+                Recorder.Init(Dispatcher, RecordLayout);
+            }
             server = new ControlServer(Execute, pipe);
             try { api = HttpApi.Start(Places.ApiFile, test ? 0 : HttpApi.DefaultPort, (name, args, token) => { if (!HttpApi.Passive.Value) lastHttp = DateTime.UtcNow; return Execute(name, args, token); }); }
             catch (Exception error) { Places.Log("网页接口开不起来：" + error.Message); }
@@ -169,12 +174,31 @@ internal sealed partial class PetWindow : Window
         PreviewMouseLeftButtonDown += Down;
         PreviewMouseMove += Move;
         PreviewMouseLeftButtonUp += Up;
-        LostMouseCapture += (_, _) => { if (dragging) { dragging = false; if (dragged) Dropped(); } };
+        PreviewMouseRightButtonDown += StrokeDown; // 右键抚摸、悬停反应、拖拽惯性和头晕（PetWindow.Touch.cs）
+        PreviewMouseRightButtonUp += StrokeUp;
+        PreviewMouseMove += HoverMove;
+        MouseLeave += (_, _) => hoverZone = null;
+        LostMouseCapture += (_, _) => { if (dragging) { dragging = false; if (dragged) Dropped(); } if (stroking) EndStroke(); };
         Closing += Leaving;
-        Closed += (_, _) => { server?.Dispose(); api?.Dispose(); player?.Dispose(); bubble.Close(); };
+        Closed += (_, _) => { TouchClosed(); Recorder.Stop(wait: true); server?.Dispose(); api?.Dispose(); player?.Dispose(); bubble.Close(); };
     }
 
     private void Send(string command) => player?.Send(command);
+
+    // 录制的版面信息，都是帧像素：气泡尖儿该对着哪儿（窗口中线、头顶往下 6 DIP），气泡的样式参数。
+    private object RecordLayout()
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        double k = dpi.DpiScaleX * Recorder.Boost;
+        return new
+        {
+            dpiScale = dpi.DpiScaleX, supersample = Recorder.Boost, windowDip = new { width = Width, height = Height },
+            shape = settings.Shape, scale = settings.Scale, texScale = settings.TexScale,
+            bubbleTip = new { x = Math.Round(Width / 2 * k, 1), y = Math.Round((Height * Shape.HeadTop + 6) * k, 1) },
+            bubbleStyle = new { scale = settings.BubbleScale, mutterScale = 0.85, font = "Microsoft YaHei UI", fontSizeDip = 15, lineHeightDip = 22, maxWidthDip = 300,
+                padding = new[] { 18, 14, 14, 14 + Bubble.PointerHeight }, cornerRadius = 24, border = 1.5, borderColor = "#506098", background = "#FFFBF4", textColor = "#323854", pointerHalfWidth = 8, pointerHeight = Bubble.PointerHeight },
+        };
+    }
 
     // 本机加的（2026-11-06）：桌宠起来时顺手带起任务栏托盘里的大肥鱼控制台。先找插件里编好的（插件\tray\app\FishTray.exe，setup.ps1 编），
     // 再找老位置（文档\大肥鱼控制台\app\FishTray.exe）。它自己只留一个、桌宠退场后自己也退；没装它就什么也不做。
@@ -209,7 +233,8 @@ internal sealed partial class PetWindow : Window
         player = started;
         lastLeft = Left; lastTop = Top;
         var dpi = VisualTreeHelper.GetDpi(this);
-        var scale = dpi.DpiScaleX; // 宽高用同一系数，保证渲染画面比例始终与窗口一致（不会变形）
+        var scale = dpi.DpiScaleX * Recorder.Boost; // 宽高用同一系数，保证渲染画面比例始终与窗口一致（不会变形）；录制 supersample 时按几倍出图
+        Recorder.Expect((int)(Width * scale), (int)(Height * scale));
         started.Start(model, Shape, settings.Outfit, (int)(Width * scale), (int)(Height * scale), settings.Fps, settings.TexScale);
         body.Forget(); silent = null; relaxAt = null;
         behavior.Resume(DateTime.UtcNow, settings.IdleSeconds);
@@ -255,7 +280,8 @@ internal sealed partial class PetWindow : Window
         if (PresentationSource.FromVisual(this) != null)
         {
             var dpi = VisualTreeHelper.GetDpi(this);
-            var scale = dpi.DpiScaleX; // 宽高用同一系数，避免非整数缩放造成轻微变形
+            var scale = dpi.DpiScaleX * Recorder.Boost; // 宽高用同一系数，避免非整数缩放造成轻微变形；录制 supersample 时按几倍出图
+            Recorder.Expect((int)(Width * scale), (int)(Height * scale));
             Send($"resize {(int)(Width * scale)} {(int)(Height * scale)}");
         }
         UpdateCut();
@@ -527,9 +553,11 @@ internal sealed partial class PetWindow : Window
     // 亲密度满档时戳裙子是「娇羞」）。写了「亲密N」的那句要到第 N 级才会说，而且级别越高的句子越常被挑中（本机加，2026-11-08）。
     private void LoadTouchFile()
     {
+        // touch.txt 之外，右键抚摸、悬停、头晕的台词（stroke.txt / hover.txt / dizzy.txt）格式一样，一起读进来；哪个文件没有就跳过。
+        foreach (var file in new[] { "touch.txt", "stroke.txt", "hover.txt", "dizzy.txt" })
         try
         {
-            foreach (var line in File.ReadAllLines(Path.Combine(Places.Root, "touch.txt")))
+            foreach (var line in File.ReadAllLines(Path.Combine(Places.Root, file)))
             {
                 if (line.TrimStart().StartsWith("//")) continue;
                 var parts = line.Split('|', 3);
@@ -538,7 +566,7 @@ internal sealed partial class PetWindow : Window
                 if (parts.Length == 3 && parts[2].Trim().Length > 0)
                 {
                     var condition = Condition.Parse(parts[2], out var bad);
-                    if (condition == null) { Places.Log($"touch.txt 的条件读不懂「{bad}」，这行先不用：{parts[1]}"); continue; }
+                    if (condition == null) { Places.Log($"{file} 的条件读不懂「{bad}」，这行先不用：{parts[1]}"); continue; }
                     level = condition.MinLevel;
                 }
                 var key = parts[0].Trim();
@@ -782,6 +810,7 @@ internal sealed partial class PetWindow : Window
         if (agents == 0 && agentsBefore > 0) behavior.ClearActivities();
         agentsBefore = agents;
         UpdateBody();
+        HoverTick();
         BondTick();
         AlarmTick();
         UpdateFilm();
@@ -809,7 +838,7 @@ internal sealed partial class PetWindow : Window
         {
             mouseIdle = true; // 鼠标停在同一处超过 5 秒，暂时关掉视线跟随
         }
-        if (!settings.FollowMouse || mouseIdle || test || (settings.SkitPausesFollow && SkitOn))
+        if (!settings.FollowMouse || mouseIdle || test || stroking || (settings.SkitPausesFollow && SkitOn))
         {
             if (lookX == 0 && lookY == 0) return;
             lookX = lookY = 0;
@@ -881,6 +910,7 @@ internal sealed partial class PetWindow : Window
         {
             dragged = true;
             behavior.DragStart();
+            TouchDragStarted();
             Happened("drag_start", new { });
         }
         if (dragged) { Left = windowStart.X + dx; Top = windowStart.Y + dy; }
@@ -928,14 +958,21 @@ internal sealed partial class PetWindow : Window
         Clamp();
         SavePlace();
         BondSeen();
-        behavior.DragEnd(DateTime.UtcNow);
-        Happened("drag_end", new { });
+        double level = dizzy;
+        bool dazed = level >= DizzyLow;
+        behavior.DragEnd(DateTime.UtcNow, dazed);
+        dragMeasured = false; dizzy = 0; dizzyAngle = null;
+        AimAllZero();
+        springK = 120; springC = 11;
+        if (dazed) StartDizzy(level); // 转晕了：放下后晕一会儿，时间随晕的程度（PetWindow.Touch.cs）
+        Happened("drag_end", new { dizzy = (int)level });
     }
 
     private void Happened(string kind, object detail)
     {
         var happening = new Happening(++sequence, DateTime.UtcNow, kind, detail);
         happenings.Add(happening);
+        Recorder.Event(kind, detail);
         if (happenings.Count > 100) happenings.RemoveAt(0);
         server?.Publish(kind, detail);
     }
@@ -1182,6 +1219,8 @@ internal sealed partial class PetWindow : Window
     private async Task<object> Run(string name, JsonElement args, CancellationToken token)
     {
         if (exiting) throw new InvalidOperationException("你正在告别，收起之后再叫你出来。");
+        if (Recorder.Active && name is not ("get_state" or "recent_events" or "look_back" or "recall"))
+            Recorder.Event(name, args.ValueKind == JsonValueKind.Object ? args.Clone() : null); // 录制时记下工具调用（say、dress、show……）
         if (name is not ("get_state" or "quit" or "recent_events") && trouble != null && player == null) throw new InvalidOperationException(trouble);
         switch (name)
         {

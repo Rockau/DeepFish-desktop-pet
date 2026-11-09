@@ -539,6 +539,7 @@ public:
 
         // Held values ease in and out like her expressions, or a mood would snap on and off.
         std::vector<std::pair<std::string, Hold*>> heldParameters;
+        float heldX = 0, heldY = 0, heldRoll = 0, heldSquash = 0; // 本机加：View* 也能用 set/live 一直按住（右键抚摸、拖拽惯性实时驱动整个身体）
         for (auto hold = holds.begin(); hold != holds.end();)
         {
             Hold& entry = hold->second;
@@ -547,13 +548,17 @@ public:
             if (!entry.on && entry.weight < 0.01f) { hold = holds.erase(hold); continue; }
             auto input = inputs.find(hold->first);
             if (input != inputs.end()) input->second += entry.value * entry.weight;
+            else if (hold->first == "ViewX") heldX += entry.value * entry.weight;
+            else if (hold->first == "ViewY") heldY += entry.value * entry.weight;
+            else if (hold->first == "ViewRoll") heldRoll += entry.value * entry.weight;
+            else if (hold->first == "ViewSquash") heldSquash += entry.value * entry.weight;
             else if (!lid(hold->first, 1 + (entry.value - 1) * entry.weight)) heldParameters.push_back({ hold->first, &entry });
             ++hold;
         }
 
         // Her movements add to wherever she is looking, and to each other: a new one never cuts one short.
         // Tracks named View* move her whole figure: the model's own parameters cannot lift her off the ground.
-        bodyX = bodyY = bodyRoll = bodySquash = 0;
+        bodyX = heldX; bodyY = heldY; bodyRoll = heldRoll; bodySquash = heldSquash;
         std::vector<std::pair<std::string, float>> movedParameters;
         bool eyeAnim = false; // 有单眼眨眼动画时，暂停自动眨眼，避免又闭一次
         for (auto track = tracks.begin(); track != tracks.end();)
@@ -885,6 +890,13 @@ void Exec(const std::string& line, Pet& pet, View& view)
         hold.target = static_cast<float>(atof(b.c_str()));
         if (!shown) hold.value = hold.target;
         hold.on = true;
+    }
+    // 本机加：live 和 set 一样按住一个值，但立刻到位、不缓动（调用方自己做弹簧，每帧发一次）。
+    else if (command == "live")
+    {
+        Hold& hold = pet.holds[a];
+        hold.target = hold.value = static_cast<float>(atof(b.c_str()));
+        hold.weight = 1; hold.on = true;
     }
     else if (command == "clear") { auto hold = pet.holds.find(a); if (hold != pet.holds.end()) hold->second.on = false; }
     else if (command == "clearall") { for (auto& hold : pet.holds) hold.second.on = false; pet.ClearExpressions(); }
