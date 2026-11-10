@@ -59,7 +59,7 @@ internal sealed partial class PetWindow
 
     private void StartTouchTimer()
     {
-        touchTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, (_, _) => TouchStep(), Dispatcher);
+        touchTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(4), DispatcherPriority.Render, (_, _) => TouchStep(), Dispatcher);
         if (!touchTimer.IsEnabled) { touchLast = DateTime.UtcNow; touchTimer.Start(); }
     }
 

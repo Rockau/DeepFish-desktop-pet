@@ -18,7 +18,7 @@ internal readonly record struct HandPose(double Rot, double K, double Cos, doubl
 
 internal sealed class HandWindow : Window
 {
-    internal const double Size = 320;
+    internal const double Size = 160;
     private readonly HandVisual visual = new();
 
     internal HandWindow()

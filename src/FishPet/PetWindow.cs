@@ -231,6 +231,7 @@ internal sealed partial class PetWindow : Window
     {
         if (model == null) { Trouble("没找到模型：把模型文件夹放进插件的 model 文件夹里（里面要有 " + Places.ModelFile + "）。"); return; }
         if (!File.Exists(Places.Renderer)) { Trouble("没找到渲染程序：先运行插件里的 setup.ps1 编译它。"); return; }
+        timeBeginPeriod(1); // 摸头那只手要更高帧：把系统计时精度提到 1ms（关闭时恢复）
         var started = new Player(image);
         started.Ready += Ready;
         started.Failed += message => Trouble("渲染出问题了：" + message);
@@ -1214,6 +1215,7 @@ internal sealed partial class PetWindow : Window
         }
         await Task.Yield(); // 收起待命时上面一个 await 都没有，不让出的话 Close() 会落在关闭事件里面而报错（本机修，2026-11-06）
         exitReady = true;
+        timeEndPeriod(1);
         Close();
         Application.Current.Shutdown();
     }
@@ -1564,6 +1566,9 @@ internal sealed partial class PetWindow : Window
     private static extern nint GetWindowLongPtr(nint hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
+    // 摸头的手要更高帧（本机加，2026-11-11）：把计时精度提到 1ms，关闭时恢复
+    [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint period);
+    [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint period);
 }
 
 
