@@ -72,6 +72,9 @@ internal sealed partial class Body
         ["斜眼"] = (_, s, _) => new("eyes", [("REyeSquint", .9 * s), ("LEyeSquint", .9 * s), ("EyeOpen", .7)]),
         ["眨单眼"] = (_, _, _) => new("eyes", [("ParamEyeLOpen", 0), ("EyeSmile", 1)]),
         ["单眨眼"] = (_, _, _) => new(Move: [("ParamEyeLOpen", "0:0 .2:-1 2.2:-1 2.35:0")]),
+        // 笑眼状态下的单眨眼：眼睛先摆成笑眼，再让一只眼皮 0.8 秒闭一下、同时向左歪一下头（本机加，2026-11-11）
+        ["快眨单眼"] = (_, _, _) => new(Channel: "eyes", Hold: [("EyeOpen", .45), ("EyeSmile", 1)],
+            Move: [("ParamEyeLOpen", "0:0 .14:-1 .6:-1 .8:0"), ("FaceAngleZ", "0:0 .14:12 .6:12 .8:0")]),
         ["挑眉"] = (_, s, _) => new("brows", [("ParamBrowLY", .6 * s), ("ParamBrowRY", .6 * s), ("BrowInnerUp", .4 * s)]),
         ["皱眉"] = (_, s, _) => new("brows", [("ParamBrowLY", -.8 * s), ("ParamBrowRY", -.8 * s), ("ParamBrowLAngle", -s), ("ParamBrowRAngle", -s)]),
         ["八字眉"] = (_, s, _) => new("brows", [("BrowInnerUp", s), ("ParamBrowLAngle", .6 * s), ("ParamBrowRAngle", .6 * s)]),
@@ -100,6 +103,8 @@ internal sealed partial class Body
             ("BrowInnerUp", Scale("0:0 .1:.5 .45:.5 .7:0", s))]),
         ["歪一下头"] = (a, s, _) => new(Move: [("FaceAngleZ", Scale("0:0 .2:12 .6:12 .9:0", s * Side(a)))]),
         ["晃头"] = (_, s, _) => new(Move: [("FaceAngleZ", Scale("0:0 .3:-10 .7:10 1.1:-8 1.5:6 2:0", s))]),
+        // 慢慢地左右歪头：左→右→左→回正，最后慢慢停下（本机加，2026-11-11，给摸头彩蛋第 1 句用）
+        ["慢歪头"] = (_, s, _) => new(Move: [("FaceAngleZ", Scale("0:0 1:8 2.2:-8 3.4:6 4.6:0", s))]),
         ["缩一下"] = (_, s, _) => new(Move: [("ViewSquash", Scale("0:0 .08:.05 .3:.01 .6:0", s)), ("FaceAngleY", Scale("0:0 .08:-8 .6:0", s))]),
         ["叹气"] = (_, _, _) => new(Move: [("LeanInput", "0:0 .8:5 1.8:-7 2.8:-6 3.5:0"), ("FaceAngleY", "0:0 .8:7 1.8:-9 2.8:-8 3.5:0"),
             ("ViewSquash", "0:0 .8:-.02 1.2:-.02 1.9:.03 2.8:.025 3.5:0"), ("EyeOpen", "0:0 .8:-.2 1.8:-.6 2.8:-.55 3.5:0"),
@@ -291,7 +296,7 @@ internal sealed partial class Body
     }
 
     // Moves that are reflexes keep their own speed whatever she is saying.
-    private static readonly HashSet<string> Reflexes = ["吓一跳", "眨眼", "缩一下"];
+    private static readonly HashSet<string> Reflexes = ["吓一跳", "眨眼", "缩一下", "快眨单眼"];
     private const double Beat = .35, HandBeat = .7, StartleBeat = .45;
 
     // Plays one cue and says how long her words wait before going on. Her moves go with her words (tuned by eye,

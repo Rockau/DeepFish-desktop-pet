@@ -154,17 +154,20 @@ public partial class App : System.Windows.Application
         if (tray is not null)
         {
             bool? hidden = panel.Hidden;
+            bool want = hidden == false || panel.IsVisible;
+            if (tray.Visible != want) Log($"visible {tray.Visible} -> {want} (hidden={hidden?.ToString() ?? "null"}, panel={panel.IsVisible}, pet={Pet.Running})");
             tray.Text = hidden is null ? "大肥鱼（连接中）" : hidden == true ? "大肥鱼 · 收起着" : "大肥鱼 · 在桌面上";
             // 她收着的时候托盘图标也不露面；她出场（或面板还开着）才出现，默认落在“显示隐藏的图标”里
-            tray.Visible = hidden == false || panel.IsVisible;
+            tray.Visible = want;
         }
     }
 
-    private void Quit()
+    private async void Quit()
     {
         poll.Stop();
         if (tray is not null) { tray.Visible = false; tray.Dispose(); tray = null; }
         panel?.Close();
+        await Pet.Call("quit"); // 退出控制台时，也让桌宠鞠躬退场（她收不着就作罢）
         Shutdown();
     }
 

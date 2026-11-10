@@ -10,6 +10,8 @@ const BUILD = /\b(dotnet\s+(build|publish|msbuild)|msbuild|npm\s+run\s+build|yar
 const TEST = /(\bdotnet\s+test\b|\.Tests\b|\bpytest\b|python\S*\s+-m\s+(pytest|unittest)|\bnpm\s+(run\s+)?test\b|\byarn\s+test\b|\bpnpm\s+test\b|\bjest\b|\bvitest\b|\bcargo\s+test\b|\bgo\s+test\b|\bmvn\s+test\b|\bgradle\w*\s+test\b)/i
 const FAILED = /(\b[1-9]\d*\s+(failed|failing|errors?)\b|\bFAILED\b|\bFailed!|失败\s*[:：]?\s*[1-9]|Build FAILED|\berror\s+[A-Z]{2,}\d+)/
 const LONG_TASK = 180 * 1000 // 这一轮从用户发消息算起超过 3 分钟算「长任务」
+const THINK_TIMEOUT = 30 * 1000 // 收到消息后 30 秒内没有任何工具调用，算「思考超时」
+const NEW_SESSION_GAP = 10 * 1000 // 新会话事件的最小间隔，防止子代理字段认错时连喊
 
 export function apply(ctx, config) {
   const apiPath = config?.apiPath // 插件里的 api.json（cordis.patch.yml 里填）
@@ -72,25 +74,59 @@ export function apply(ctx, config) {
 
   const disposers = new Map()
   const turnStart = new Map() // agentId -> 用户发消息的时间（毫秒）
+  const thinkTimers = new Map() // agentId -> 思考超时计时器
+  let lastNewSession = 0
+
+  function clearThink(id) {
+    const t = thinkTimers.get(id)
+    if (t) { clearTimeout(t); thinkTimers.delete(id) }
+  }
+  function clearAllThink() { for (const id of [...thinkTimers.keys()]) clearThink(id) }
+
+  // 根 agent：没有任何「父」字段。字段名在不同版本可能不一样，多认几个；认不出就当根（再靠间隔去重）。
+  function isRoot(agent) {
+    for (const key of ['parent', 'parentId', 'parentID', 'parentAgent', 'parentAgentId', 'parentAgentID', 'owner']) {
+      if (agent?.[key]) return false
+    }
+    return true
+  }
+
+  // turn-stopping 的载荷里看得出是用户中止的话 → true。看不出就当正常完成。
+  function wasInterrupted(payload) {
+    if (!payload || typeof payload !== 'object') return false
+    if (payload.aborted === true || payload.interrupted === true || payload.cancelled === true || payload.canceled === true) return true
+    const why = [payload.reason, payload.cause, payload.stopReason, payload.status, payload.error?.name, payload.error?.message]
+      .filter((x) => typeof x === 'string').join(' ')
+    return /abort|interrupt|cancel|user[-_ ]?stop|中断|取消/i.test(why)
+  }
 
   function registerAgent(agent) {
     if (!agent?.ctx || typeof agent.ctx.on !== 'function' || disposers.has(agent.id)) return
     const actx = agent.ctx
     const dispose = actx.effect(() => {
-      actx.on('agent/error', () => void sendEvent('出错'))
+      actx.on('agent/error', () => { clearThink(agent.id); void sendEvent('出错') })
       actx.on('agent/inbox/inserted', () => {
         turnStart.set(agent.id, Date.now())
         void sendEvent('收到')
+        // 思考超时：30 秒内没有工具调用、也没结束这一轮，就喊一声（只喊一次）
+        clearThink(agent.id)
+        thinkTimers.set(agent.id, setTimeout(() => {
+          thinkTimers.delete(agent.id)
+          void sendEvent('思考超时')
+        }, THINK_TIMEOUT))
       })
-      actx.on('agent/turn-stopping', () => {
+      actx.on('agent/turn-stopping', (payload) => {
+        clearThink(agent.id)
         const started = turnStart.get(agent.id)
         turnStart.delete(agent.id)
+        void log(`turn-stopping keys=${payload && typeof payload === 'object' ? Object.keys(payload).join(',') : typeof payload}`)
+        if (wasInterrupted(payload)) return void sendEvent('中断')
         void sendEvent(started && Date.now() - started > LONG_TASK ? '长任务完成' : '完成')
       })
       actx.on('approval/request', (_req, next) => { void sendEvent('授权'); return next() })
       actx.on('user-questions/request', (_req, next) => { void sendEvent('等你'); return next() })
     })
-    disposers.set(agent.id, () => { turnStart.delete(agent.id); dispose() })
+    disposers.set(agent.id, () => { turnStart.delete(agent.id); clearThink(agent.id); dispose() })
     void log(`registered ${agent.id}`)
   }
 
@@ -102,13 +138,24 @@ export function apply(ctx, config) {
   } catch {}
 
   // 2. 未来新创建的 agent。
-  const offCreated = ctx.on('agent/created', (payload) => registerAgent(payload?.agent))
+  const offCreated = ctx.on('agent/created', (payload) => {
+    const agent = payload?.agent
+    registerAgent(agent)
+    // 新会话：只有根 agent 才喊，子代理不喊；10 秒内不重复
+    const now = Date.now()
+    if (agent && isRoot(agent) && now - lastNewSession > NEW_SESSION_GAP) {
+      lastNewSession = now
+      void log(`new session ${agent.id}`)
+      void sendEvent('新会话')
+    }
+  })
 
   // 3. subagent/end 挂在 root 上（已验证能收到）。
   const offSubagent = ctx.on('subagent/end', () => void sendEvent('子任务完成'))
 
   // 4. tools/result 挂在 root 上（Scoped<ToolsService>，和 subagent/end 一样不是 agent 级）：命令执行完。
   const offTools = ctx.on('tools/result', (exec, result) => {
+    clearAllThink() // 开始动手了，不算在发呆
     const command = commandOf(exec)
     if (!command) return
     const { text, exitCode, isError } = outcomeOf(result)
@@ -133,6 +180,7 @@ export function apply(ctx, config) {
     offCreated?.()
     offSubagent?.()
     offTools?.()
+    clearAllThink()
     for (const d of disposers.values()) d?.()
   }
 }

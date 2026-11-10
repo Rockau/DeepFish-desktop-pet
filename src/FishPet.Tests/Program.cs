@@ -513,6 +513,9 @@ void VerifyBond()
     Check(a.Points == 5 && a.TodayNet == 5, "head pats count five times a day");
     a.Apply("摸头", day.AddDays(1));
     Check(a.Points == 6 && a.TodayNet == 1, "a new day counts again");
+    // 摸头彩蛋（30 秒）：「融化」一天一次 +3（用户定的，2026-11-11）
+    var melt = new Affection();
+    Check(melt.Apply("融化", day).Delta == 3 && melt.Apply("融化", day).Delta == 0, "the melt easter egg pays +3 once a day");
     a.Apply("戳裙子", day.AddDays(1)); a.Apply("挨打", day.AddDays(1));
     Check(a.Points == 3, "poking the skirt and hitting take points");
     for (int i = 0; i < 5; i++) a.Apply("挨打", day.AddDays(1));

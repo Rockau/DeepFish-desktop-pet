@@ -94,11 +94,14 @@ public partial class MainWindow : Window
         ScaleSlider.ValueChanged += (_, e) => { if (!loading) Queue("scale", Math.Round(e.NewValue, 1)); };
         BubbleSlider.ValueChanged += (_, e) => { if (!loading) Queue("bubble_scale", Math.Round(e.NewValue, 1)); };
         IdleSlider.ValueChanged += (_, e) => { if (!loading) Queue("idle_seconds", IdleStops[(int)Math.Round(e.NewValue)]); };
+        VolumeSlider.ValueChanged += (_, e) => { if (!loading) Queue("volume", Math.Round(e.NewValue, 0) / 100); };
         SetupSlider(ScaleSlider, ScaleMarks, ScaleValue, v => $"{v:0.0}×", (0.5, "0.5×"), (1, "1.0×"), (1.5, "1.5×"), (2, "2.0×"));
         SetupSlider(BubbleSlider, BubbleMarks, BubbleValue, v => $"{v:0.0}×", (0.5, "0.5×"), (1, "1.0×"), (1.5, "1.5×"), (2, "2.0×"));
+        SetupSlider(VolumeSlider, VolumeMarks, VolumeValue, v => $"{v:0}%", (0, "静音"), (50, "50%"), (100, "100%"));
         SetupSlider(IdleSlider, IdleMarks, IdleValue, v => SecondsText(IdleStops[(int)Math.Round(v)]),
             (0, "15秒"), (Array.IndexOf(IdleStops, 30), "30秒"), (Array.IndexOf(IdleStops, 60), "1分"), (Array.IndexOf(IdleStops, 120), "2分"), (Array.IndexOf(IdleStops, 300), "5分"), (IdleStops.Length - 1, "10分"));
-        Wire(SwFollow, "follow_mouse"); Wire(SwFull, "hide_on_fullscreen"); Wire(SwStartHidden, "start_hidden"); Wire(SwKeepOn, "keep_on_screen"); Wire(SwUpdates, "check_updates"); Wire(SwCoaxSleep, "coax_sleep"); Wire(SwCoaxLunch, "coax_lunch");
+        Wire(SwFollow, "follow_mouse"); Wire(SwFull, "hide_on_fullscreen"); Wire(SwStartHidden, "start_hidden"); Wire(SwKeepOn, "keep_on_screen"); Wire(SwUpdates, "check_updates"); Wire(SwCoaxSleep, "coax_sleep"); Wire(SwCoaxLunch, "coax_lunch"); Wire(SwVoice, "voice_enabled");
+        SwVoice.Click += (_, _) => ApplyVoiceVisibility();
 
         ShowSwitch.Click += async (_, _) => await SetShown(ShowSwitch.IsChecked == true);
         CloseButton.Click += (_, _) => Hide();
@@ -384,6 +387,9 @@ public partial class MainWindow : Window
     private static void SetSeg(Seg seg, int index) { for (int i = 0; i < seg.Buttons.Length; i++) seg.Buttons[i].IsChecked = i == index; }
 
     private void Wire(ToggleButton toggle, string key) => toggle.Click += (_, _) => { Touch(key); Queue(key, toggle.IsChecked == true); };
+
+    // 语音关掉时，把音量滑块整块藏起来（连标题、刻度和数值一起）。
+    private void ApplyVoiceVisibility() => VolumePanel.Visibility = SwVoice.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
     private void Touch(string key) => touched[key] = DateTime.UtcNow;
     private bool Fresh(string key) => !touched.TryGetValue(key, out var at) || (DateTime.UtcNow - at).TotalSeconds > 4;
@@ -762,6 +768,9 @@ public partial class MainWindow : Window
             if (Fresh("fps")) SetSeg(fpsSeg, Math.Max(0, Array.IndexOf(FpsValues, (int)D("fps", 60))));
             if (Fresh("idle_seconds")) IdleSlider.Value = NearestStop(D("idle_seconds", 40));
             if (Fresh("bubble_scale")) BubbleSlider.Value = Math.Clamp(D("bubble_scale", 1), 0.5, 2);
+            if (Fresh("volume")) VolumeSlider.Value = Math.Clamp(D("volume", 0.8) * 100, 0, 100);
+            if (Fresh("voice_enabled")) SwVoice.IsChecked = B("voice_enabled");
+            ApplyVoiceVisibility();
             if (Fresh("stay")) SetSeg(staySeg, Array.IndexOf(StayValues, (int)D("bubble_seconds")));
             if (Fresh("quality")) SetSeg(qualitySeg, Math.Max(0, Array.IndexOf(QualityValues, D("tex_scale", 1))));
             if (Fresh("follow_mouse")) SwFollow.IsChecked = B("follow_mouse");

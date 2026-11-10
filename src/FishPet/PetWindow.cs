@@ -35,6 +35,7 @@ internal sealed partial class PetWindow : Window
     private readonly Body body;
     private readonly BubbleWindow mutter; // 待机自言自语的小气泡
     private readonly Speech mutterSpeech; // 嘀咕/小剧场/事件也用 Speech 打字，好让嘴跟着字动（2026-11-06）
+    private readonly Voice? voicePack; // 固定台词的录音（voice\index.json）；没有这个文件夹就照旧只说话不上声
     private static readonly HttpClient Http = new();
     private readonly Random random = new();
     private readonly Dictionary<string, string> textCues = []; // 固定嘀咕文本 → 表情动作
@@ -132,6 +133,9 @@ internal sealed partial class PetWindow : Window
         LoadTouchFile();
         speech = new Speech(bubble) { Seconds = settings.BubbleSeconds };
         mutterSpeech = new Speech(mutter) { Seconds = -1 }; // 停留由嘀咕/小剧场/事件自己控制，Speech 不自动收
+        voicePack = Voice.Load(Path.Combine(Places.Root, "voice"));
+        voicePlayer.Volume = settings.Volume * Settings.VolumeMax; // 语音音量（settings: volume，控制台里能调）
+        Places.Log($"语音包：{(voicePack == null ? "没有（只说话）" : $"{voicePack.Count} 条")}");
         body = new Body(Send);
         updates = new Updates(Places.Root, Places.Log);
         behavior = new Behavior(Send, () => [.. settings.Outfit, .. body.Overlays], new Random()) { HandBusy = () => body.HandUp, Ended = body.Restore, IdleStarted = name => OnIdleStarted(name), TextIdle = text => PlayTextIdle(text), TextIdleMoods = textCues.Keys.ToArray(), SkitIdle = name => PlaySkit(name), SkitIdleMoods = skits.Keys.ToArray(),
@@ -662,6 +666,7 @@ internal sealed partial class PetWindow : Window
 
     private async void MutterFor(string action)
     {
+        if (FocusWork) return; // 专注陪伴期间不嘀咕（本机加，2026-11-09）
         if (string.IsNullOrWhiteSpace(settings.LlmApiKey)) return;
         if (random.NextDouble() > settings.MutterChance) return; // 随机概率，避免太吵
         if (MutterBlocked) return;
@@ -685,13 +690,15 @@ internal sealed partial class PetWindow : Window
     // 抽到固定文本：显示文本 + 按文本配的表情动作 + 临时道具。
     private async void PlayTextIdle(string text)
     {
+        if (FocusWork) return; // 专注时不嘀咕
         if (MutterBlocked) return;
         int token = ++mutterToken;
         textIdleActive = true;
         if (textCues.TryGetValue(text, out var cue)) body.Apply(cue);
         if (textProps.TryGetValue(text, out var props)) PutOn(props, 6);
+        var voiceSeconds = Speak(text);
         mutterSpeech.Say(new Line(text, body.Apply));
-        await Task.Delay(5000);
+        await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, (voiceSeconds ?? 0) + 0.4)));
         if (token != mutterToken) return; // 中途被说话打断了，收尾已经做过
         textIdleActive = false;
         mutterSpeech.Stop();
@@ -702,6 +709,7 @@ internal sealed partial class PetWindow : Window
     // 小剧场：几句话 + 动作 + 道具连着演。force：演示用，不受「刚说完要安静」限制。
     private async void PlaySkit(string name, bool force = false)
     {
+        if (FocusWork && !force) return; // 专注陪伴期间不演小剧场（连语音一起停）
         if (!skits.TryGetValue(name, out var skit) || (!force && MutterBlocked)) return;
         int token = ++mutterToken;
         skitToken = token; // 演出期间暂时不跟鼠标（Tick 里看 SkitOn）；被打断时 mutterToken 一变就自动算演完
@@ -712,8 +720,9 @@ internal sealed partial class PetWindow : Window
             if (step.Cue != null) body.Apply(step.Cue);
             // 台词里用全角「｜」隔开几句，每次随机演其中一句（2026-11-06）。
             var said = step.Text.Contains('｜') ? step.Text.Split('｜')[random.Next(step.Text.Split('｜').Length)].Trim() : step.Text;
+            var voiceSeconds = said.Length > 0 ? Speak(said) : null;
             if (said.Length > 0) mutterSpeech.Say(new Line(said, body.Apply)); else mutterSpeech.Stop();
-            await Task.Delay(TimeSpan.FromSeconds(step.Seconds));
+            await Task.Delay(TimeSpan.FromSeconds(Math.Max(step.Seconds, (voiceSeconds ?? 0) + 0.3)));
             if (token != mutterToken || exiting) return; // 被说话打断了，收尾已经做过
         }
         textIdleActive = false;
@@ -947,8 +956,10 @@ internal sealed partial class PetWindow : Window
         int pick = random.Next(lines.Sum(line => 1 + 2 * line.Level));
         var said = lines[^1].Text;
         foreach (var line in lines) { pick -= 1 + 2 * line.Level; if (pick < 0) { said = line.Text; break; } }
+        var voiceSeconds = Speak(said);
         mutterSpeech.Say(new Line(said, body.Apply));
-        await Task.Delay(Math.Clamp(said.Length * 250 + 1200, 2500, 6000));
+        var wait = Math.Max(Math.Clamp(said.Length * 250 + 1200, 2500, 6000) / 1000.0, (voiceSeconds ?? 0) + 0.4);
+        await Task.Delay(TimeSpan.FromSeconds(wait));
         if (token != mutterToken || speech.IsSaying) return;
         mutterSpeech.Stop();
     }
@@ -1034,13 +1045,32 @@ internal sealed partial class PetWindow : Window
         relaxAt = null;
     }
 
+    // 这句台词有录音就放出来（返回录音长度），没有就返回 null、照旧只打字冒泡。
+    private double? Speak(string text)
+    {
+        if (!settings.VoiceEnabled) return null; // 语音关着：预录也不出声
+        var file = voicePack?.Find(text);
+        if (file == null) return null;
+        try { return PlayVoice(file); }
+        catch { return null; }
+    }
+
+    // 语音总开关关掉时，把正在放的录音也停掉。
+    private void StopVoice()
+    {
+        try { voicePlayer.Stop(); voicePlayer.Close(); } catch { /* 已经关了 */ }
+        voice = null;
+    }
+
     // Returns how long the recording is, for spreading what she does over it.
     private double? PlayVoice(string? file)
     {
         if (string.IsNullOrWhiteSpace(file) || !Path.IsPathRooted(file) || !file.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) || !File.Exists(file))
             throw new ArgumentException("audio 要是本机 wav 文件的完整路径，而且文件要在。");
         voicePlayer.Stop();
+        voicePlayer.Close(); // 放完/换一条时松开文件，不然录音文件一直被占着没法替换
         voicePlayer.Open(new Uri(file));
+        voicePlayer.Volume = settings.Volume * Settings.VolumeMax; // Close() 会把音量打回默认值，每次打开后要重设，否则控制台的音量条没用
         voicePlayer.Play();
         try { voice = Behavior.VoiceLevels(File.ReadAllBytes(file), VoiceStepMilliseconds); }
         catch (IOException) { voice = null; }
@@ -1057,7 +1087,7 @@ internal sealed partial class PetWindow : Window
         {
             int step = (int)(voicePlayer.Position.TotalMilliseconds / VoiceStepMilliseconds);
             if (step < levels.Length && DateTime.UtcNow < voiceUntil) level = levels[step];
-            else voice = null;
+            else { voice = null; try { voicePlayer.Close(); } catch { /* 已经关了 */ } }
         }
         if (voice == null && (speech.IsTalking || mutterSpeech.IsTalking)) level = .2 + .35 * Math.Abs(Math.Sin(Environment.TickCount64 / 70.0));
         if (level == mouth) return;
@@ -1229,12 +1259,21 @@ internal sealed partial class PetWindow : Window
                 YieldMutter(); // 说话优先：收起正在显示的嘀咕，等待排队的这段时间里也不再嘀咕
                 var text = Tools.RequiredText(args, "text");
                 var audio = Tools.OptionalText(args, "audio");
+                // 一句一句来：有预录就用预录，没有就只打字。实时语音（现编的话现场合成）已按用户要求移除（2026-11-10）。
+                var bubbles = audio != null ? [text] : Line.Split(text);
+                string? VoiceFor(string piece)
+                {
+                    if (!settings.VoiceEnabled) return null; // 语音关着：audio 和预录都不放
+                    if (audio != null) return audio;
+                    return voicePack?.Find(Body.Strip(piece).Trim());
+                }
+                var firstVoice = VoiceFor(bubbles[0]);
+                var later = bubbles.Skip(1).Select(VoiceFor).ToArray();
                 // A line each, in turn; the call returns once the first has begun, the rest wait their turn whoever
                 // asked. A recording is one utterance, so with one it is a single bubble.
-                var bubbles = audio != null ? [text] : Line.Split(text);
-                await InTurn(() => { SayLine(bubbles[0], audio != null ? PlayVoice(audio) : null); return Task.CompletedTask; }, token);
-                foreach (var next in bubbles.Skip(1))
-                    _ = InTurn(() => { if (!exiting) SayLine(next, null); return Task.CompletedTask; }, CancellationToken.None);
+                await InTurn(() => { SayLine(bubbles[0], firstVoice != null ? PlayVoice(firstVoice) : null); return Task.CompletedTask; }, token);
+                foreach (var (next, voice) in bubbles.Skip(1).Select((piece, i) => (piece, later[i])))
+                    _ = InTurn(() => { if (!exiting) SayLine(next, voice != null ? PlayVoice(voice) : null); return Task.CompletedTask; }, CancellationToken.None);
                 var note = Heard(bubbles);
                 return Tools.Text(note.Length == 0 ? new { started = true, bubbles = bubbles.Count, said = Body.Strip(text) }
                     : (object)new { started = true, bubbles = bubbles.Count, said = Body.Strip(text), note });
@@ -1285,6 +1324,17 @@ internal sealed partial class PetWindow : Window
                 if (args.TryGetProperty("bubble_seconds", out var stay) && stay.TryGetInt32(out var stays))
                 {
                     settings.BubbleSeconds = Settings.StayFor(stays); speech.Seconds = settings.BubbleSeconds;
+                }
+                if (args.TryGetProperty("volume", out var volume) && volume.TryGetDouble(out var level))
+                {
+                    settings.Volume = Math.Clamp(level, 0, 1);
+                    voicePlayer.Volume = settings.Volume * Settings.VolumeMax;
+                }
+                if (args.TryGetProperty("voice_enabled", out var voiceOn) && voiceOn.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    settings.VoiceEnabled = voiceOn.GetBoolean();
+                    if (settings.VoiceEnabled) voicePlayer.Volume = settings.Volume * Settings.VolumeMax;
+                    else StopVoice();
                 }
                 // Taken up at once: hidden behind a fullscreen program she comes back if it is turned off.
                 if (args.TryGetProperty("hide_on_fullscreen", out var hide) && hide.ValueKind is JsonValueKind.True or JsonValueKind.False)
@@ -1365,7 +1415,7 @@ internal sealed partial class PetWindow : Window
         var now = DateTime.UtcNow;
         string? why =
             standby || hiding || hiddenForFullscreen || test ? "她收着或被全屏盖住，不叫她出场" :
-            focus.Now == FocusTimer.Phase.Work && !def.Priority ? "在专注，不打扰" :
+            focus.Now == FocusTimer.Phase.Work && !def.Priority && !FocusEvent(name) ? "在专注，不打扰" :
             events.Cooling(def, now) ? "冷却中" :
             // 在说话、放语音、哄睡演出、被面板摆着姿势：谁都让位
             exiting || speech.IsSaying || voice != null || silent != null || coaxAutoReturn || (panelHold && body.Posing) ? "她在说话或被摆着姿势" :
@@ -1385,8 +1435,9 @@ internal sealed partial class PetWindow : Window
         int token = ++mutterToken;
         textIdleActive = true;
         if (line.Cue != null) body.Apply(line.Cue);
+        var voiceSeconds = line.Text.Length > 0 ? Speak(line.Text) : null;
         if (line.Text.Length > 0) mutterSpeech.Say(new Line(line.Text, body.Apply));
-        await Task.Delay(TimeSpan.FromSeconds(line.Seconds));
+        await Task.Delay(TimeSpan.FromSeconds(Math.Max(line.Seconds, (voiceSeconds ?? 0) + 0.4)));
         if (token != mutterToken || exiting) return; // 中途被说话打断了，收尾已经做过
         textIdleActive = false;
         mutterSpeech.Stop();
@@ -1480,7 +1531,7 @@ internal sealed partial class PetWindow : Window
 
     private object State() => new
     {
-        shape = settings.Shape, shapeLabel = Shape.Label, wearing = Wearing(), fps = settings.Fps, scale = settings.Scale, tex_scale = settings.TexScale, bubble_scale = settings.BubbleScale, bubble_seconds = settings.BubbleSeconds,
+        shape = settings.Shape, shapeLabel = Shape.Label, wearing = Wearing(), fps = settings.Fps, scale = settings.Scale, tex_scale = settings.TexScale, bubble_scale = settings.BubbleScale, bubble_seconds = settings.BubbleSeconds, volume = settings.Volume, voice_enabled = settings.VoiceEnabled,
         hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, start_hidden = settings.StartHidden, keep_on_screen = settings.KeepOnScreen, follow_mouse = settings.FollowMouse,
         check_updates = settings.CheckUpdates, coax_sleep = settings.CoaxSleep, coax_lunch = settings.CoaxLunch, birthday = settings.Birthday,
         update = updates.Latest is { } found ? new { current = found.Current, latest = found.Latest, behind = found.Behind, changes = found.Changes, guide = found.Guide } : null,
@@ -1514,3 +1565,6 @@ internal sealed partial class PetWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
 }
+
+
+

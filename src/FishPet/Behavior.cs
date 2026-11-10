@@ -60,8 +60,13 @@ internal sealed class Behavior
             [("FaceAngleZ", "0:0 .5:3 1.3:-2 2.1:3 3.4:0"), ("ViewSquash", "0:0 .3:.01 2.8:.01 3.4:0")]),
         ["摸后不舍"] = new(["脸红"], [("EyeSmile", .45), ("BrowInnerUp", .9), ("MouthPressLipOpen", .5), ("ParamMouthForm", .2), ("ParamEyeBallY", -.45), ("FaceAngleY", -8), ("FaceAngleZ", 7)], 4,
             [("LeanInput", "0:0 .5:-9 3.3:-8 4:0"), ("FaceAngleZ", "0:0 .7:3 1.5:-3 2.3:3 3.1:-2 4:0"), ("ViewSquash", "0:0 .4:.02 3.4:.02 4:0")]),
-        ["摸后腻歪"] = new(["脸红", "爱心眼"], [("EyeSmile", .6), ("ParamMouthForm", 1), ("MouthPressLipOpen", .4), ("BrowInnerUp", .6), ("FaceAngleY", -6), ("FaceAngleZ", 9)], 4.8,
+        ["摸后腻歪"] = new(["脸红"], [("EyeSmile", .6), ("ParamMouthForm", 1), ("MouthPressLipOpen", .4), ("BrowInnerUp", .6), ("FaceAngleY", -6), ("FaceAngleZ", 9)], 4.8,
             [("LeanInput", "0:0 .5:-15 3.9:-14 4.8:0"), ("FaceAngleZ", "0:0 .8:3 1.6:-3 2.4:3 3.2:-3 4:2 4.8:0"), ("FaceAngleX", "0:0 .8:-4 1.8:4 2.8:-4 3.8:3 4.8:0"), ("ViewSquash", "0:0 .5:.03 4.1:.03 4.8:0")], ("默认手切举手", "举手切默认手")),
+        // 摸头彩蛋（本机加，2026-11-11）：有效抚摸满 30 秒、融化后松手。脸红 + 手抬到胸口 + 快眨两下，6 秒（爱心眼已按用户要求去掉）。
+        // 前倾：松手时按住 -17，表情里用动画加 0→+1 慢慢回到 -16，结束再交回给 clear 淡出，不会和旧值叠起来弹一下。
+        ["摸后融化"] = new(["脸红"], [("EyeSmile", .55), ("ParamMouthForm", .9), ("MouthPressLipOpen", .35), ("BrowInnerUp", .5), ("FaceAngleY", -4), ("FaceAngleZ", 4), ("LeanInput", -17)], 6,
+            [("LeanInput", "0:0 .8:1 4.8:1 6:0"), ("FaceAngleZ", "0:0 .8:5 2:-2 3.6:3 6:0"), ("FaceAngleX", "0:0 .7:-3 2.2:2 3.8:-2 6:0"),
+             ("EyeOpen", "0:0 .2:-1 .28:-.2 .45:0 .95:-1 1.03:-.2 1.2:0 6:0"), ("ViewSquash", "0:0 .6:.02 5.2:.02 6:0")], ("默认手切举手", "举手切默认手")),
         ["悬停头"] = new([], [("FaceAngleZ", 11), ("FaceAngleX", -3), ("ParamEyeBallY", .3), ("BrowInnerUp", .4), ("EyeSmile", .35)], 2.8, [("FaceAngleZ", "0:0 .3:3 .8:-2 1.4:2 2.8:0")], Pushed: true),
         ["悬停脸"] = new(["脸红"], [("ParamMouthForm", .5), ("ParamEyeBallX", .4), ("ParamEyeBallY", -.2), ("FaceAngleY", -4)], 2.6, [("EyeOpen", "0:0 .15:-1 .3:0 1.1:0 1.25:-1 1.4:0 2.6:0"), ("ViewSquash", "0:0 .3:.012 2.2:.01 2.6:0")], Pushed: true),
         ["悬停手"] = new([], [("EyeSmile", .8), ("ParamMouthForm", 1), ("FaceAngleY", 4), ("FaceAngleZ", -4)], 2.8, [("FaceAngleZ", "0:0 .4:-5 1:-2 1.6:-5 2.8:0")], ("默认手切举手", "举手切默认手")),

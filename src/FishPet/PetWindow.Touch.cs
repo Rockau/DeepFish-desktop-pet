@@ -78,7 +78,7 @@ internal sealed partial class PetWindow
         {
             busy = true;
             if (stroking || dragging || dizzyOn || behavior.Quiet) { afterStroke = null; if (!stroking && !dizzyOn) behavior.Touching = false; }
-            else if (!moving || now > afterStrokeAt) PlayAfterStroke();
+            else if ((!moving && !afterStrokeMelt) || now > afterStrokeAt) PlayAfterStroke();
         }
         if (!moving && !busy) touchTimer?.Stop();
     }
@@ -108,17 +108,24 @@ internal sealed partial class PetWindow
 
     private static readonly Dictionary<string, double> NoSets = [];
 
+    // 前倾这项不从抚摸的临时表情里清掉，留给「摸后融化」用 set 慢慢接到 -18。
+    private void KeepLean() => faceSets.Remove("LeanInput");
+
     // ================= 右键抚摸（只摸头） =================
     // 只在头和整张脸（Behavior.Zone 的 head / face）上算：右键按在别处没反应。只有头部动，身体不动：
     //   · 头朝着和手相反的方向转（手在右上，脸就朝左下），眼睛却跟着手看过去；
     //   · 表情是笑眼；手靠近头的右侧单闭右眼，靠近左侧单闭左眼，摸到脸上两只眼都闭上（眯眼笑）；
-    //   · 摸得越久越害羞：3 秒后脸红，8 秒后眼冒爱心。
+    //   · 摸得越久越害羞：3 秒后脸红，8 秒后眉毛和嘴也更害羞（爱心眼已按用户要求去掉，2026-11-11）。
 
     private bool stroking;
     private HandWindow? handWindow;
     private Point strokeLast;
     private Vector strokeVel;
     private double strokeTravel, strokeMoving, strokeMaxTime, strokeHeadTime;
+    // 30 秒彩蛋（本机加，2026-11-11）：单独一条更宽容的计时（停手只退 0.1/秒、速度门槛 25），
+    // 和 3/8 秒用的 strokeHeadTime 分开，旧的手感一点不动。melted 满 30 秒后锁存到松手。
+    private double strokeDeepTime;
+    private bool melted;
     private DateTime lastStrokeGain = DateTime.MinValue;
     private string? strokeFace;
     private int strokeSide; // -1 手靠近头的左侧，1 靠近右侧（都是屏幕上的左右），0 在中间；带一点滞后，别在交界处来回抖
@@ -140,6 +147,7 @@ internal sealed partial class PetWindow
         e.Handled = true;
         stroking = true;
         strokeTravel = strokeMoving = strokeMaxTime = strokeHeadTime = 0;
+        strokeDeepTime = 0; melted = false; afterStrokeMelt = false;
         strokeVel = default; strokeFace = null; strokeSide = 0;
         afterStroke = null;
         GetCursorPos(out var p);
@@ -170,10 +178,10 @@ internal sealed partial class PetWindow
         EndStroke();
     }
 
-    // 松手后的反应：摸了多久分三档（和摸的时候的三档一样：3 秒、8 秒），脸都会红一下。
+    // 松手后的反应：摸了多久分三档（3 秒、8 秒），30 秒是彩蛋「摸后融化」。脸都会红一下。
     private (string Mood, string Key)? afterStroke;
     private DateTime afterStrokeAt;
-    private bool afterStrokeBond;
+    private bool afterStrokeBond, afterStrokeMelt;
 
     private void EndStroke()
     {
@@ -186,12 +194,32 @@ internal sealed partial class PetWindow
         double held = strokeMaxTime;
         // 只有真的摸了几下才有“摸后”的反应（按下去没动不算）。
         bool touched = strokeTravel > 8 && strokeMoving >= .4 && !dizzyOn;
-        Face(NoSets, touched ? ["脸红"] : []); // 脸红一路带到摸后的反应里，中间不褪
+        Happened("stroke_end", new { seconds = Math.Round(strokeMoving, 1), stage = melted ? 4 : held >= 8 ? 3 : held >= 3 ? 2 : 1 });
+        if (melted)
+        {
+            // 彩蛋：不断档。眯眼笑、前倾、歪头都保留，只让头和眼珠慢慢回正，0.8 秒后进「摸后融化」。
+            afterStroke = ("摸后融化", "抚摸头4");
+            afterStrokeMelt = true;
+            afterStrokeBond = strokeMoving >= 1.2;
+            afterStrokeAt = DateTime.UtcNow.AddSeconds(.8);
+            springK = 90; springC = 9;
+            foreach (var id in new[] { "FaceAngleX", "FaceAngleY", "FaceAngleZ", "ParamEyeBallX", "ParamEyeBallY" })
+                if (springs.TryGetValue(id, out var spring)) spring.Target = 0;
+            StartTouchTimer();
+            return;
+        }
+        if (!touched)
+        {
+            Face(NoSets, []);
+            AimAllZero();
+            springK = 200; springC = 28;
+            if (!dizzyOn) behavior.Touching = false;
+            return;
+        }
+        Face(NoSets, ["脸红"]); // 脸红一路带到摸后的反应里，中间不褪
         AimAllZero();
         springK = 200; springC = 28; // 松手后头很快回正（临界阻尼），再接摸后的反应
-        if (!dizzyOn && !touched) behavior.Touching = false;
-        Happened("stroke_end", new { seconds = Math.Round(strokeMoving, 1), stage = held >= 8 ? 3 : held >= 3 ? 2 : 1 });
-        if (!touched) return;
+        behavior.Touching = false;
         // 摸头加亲密度最多 60 秒一次，别按着刷分；摸得太短（不到 1.2 秒）不加。
         afterStrokeBond = strokeMoving >= 1.2;
         afterStroke = held >= 8 ? ("摸后腻歪", "抚摸头3") : held >= 3 ? ("摸后不舍", "抚摸头2") : ("摸后失落", "抚摸头1");
@@ -204,10 +232,16 @@ internal sealed partial class PetWindow
         var (mood, key) = afterStroke!.Value;
         afterStroke = null;
         behavior.Touching = false;
+        KeepLean(); // 前倾交给表情用 set 接着，别在这里清掉（清掉时旧值淡出会和表情叠加，看着会突然点一下头）
         Face(NoSets, []);
         YieldMutter();
         behavior.Show(mood, DateTime.UtcNow, force: true);
-        if (afterStrokeBond && DateTime.UtcNow - lastStrokeGain > TimeSpan.FromSeconds(60))
+        if (afterStrokeMelt)
+        {
+            afterStrokeMelt = false;
+            BondMelt();
+        }
+        else if (afterStrokeBond && DateTime.UtcNow - lastStrokeGain > TimeSpan.FromSeconds(60))
         {
             lastStrokeGain = DateTime.UtcNow;
             BondGain("摸头");
@@ -216,16 +250,19 @@ internal sealed partial class PetWindow
     }
 
     // 脸：side 是手靠近头的哪一侧（屏幕上的），face 为 true 表示手在脸上；t 是摸了多久（秒）。
+    // melt 是 27–30 秒的融化渐变（0→1）：笑眼慢慢合上变成眯眼笑、身体前倾（本机加，2026-11-11）。
     // 单闭哪只眼：ParamEyeLOpen 是模型的左眼，在屏幕的右边，所以手在屏幕右侧就闭它。
-    private static (Dictionary<string, double> Sets, string[] Exps) StrokeFace(int side, bool face, double t)
+    private static (Dictionary<string, double> Sets, string[] Exps) StrokeFace(int side, bool face, double t, double melt)
     {
+        double open = .45 * (1 - melt);                                 // 笑眼慢慢合上，最后是眯眼笑（EyeOpen 0）
         var sets = new Dictionary<string, double> { ["EyeSmile"] = 1, ["ParamMouthForm"] = 1 };
         if (face) sets["EyeOpen"] = 0;                                  // 摸到脸上：双眼闭上，眯眼笑
-        else if (side > 0) { sets["EyeOpen"] = .45; sets["ParamEyeLOpen"] = 0; }   // 靠近右侧：单闭右眼，另一只笑眼
-        else if (side < 0) { sets["EyeOpen"] = .45; sets["ParamEyeROpen"] = 0; }   // 靠近左侧：单闭左眼
-        else sets["EyeOpen"] = .45;                                     // 其他：笑眼
+        else if (side > 0) { sets["EyeOpen"] = open; sets["ParamEyeLOpen"] = 0; }   // 靠近右侧：单闭右眼，另一只笑眼
+        else if (side < 0) { sets["EyeOpen"] = open; sets["ParamEyeROpen"] = 0; }   // 靠近左侧：单闭左眼
+        else sets["EyeOpen"] = open;                                    // 其他：笑眼
+        if (melt > 0) sets["LeanInput"] = -17 * melt;                   // 融化时身体往前靠（用户定 -17，2026-11-11）
         if (t >= 8) { sets["BrowInnerUp"] = .5; sets["MouthPressLipOpen"] = .4; }
-        return (sets, t >= 8 ? ["脸红", "爱心眼"] : t >= 3 ? ["脸红"] : []);
+        return (sets, t >= 3 ? ["脸红"] : []);
     }
 
     private void StepStroke(double dt, DateTime now)
@@ -247,6 +284,15 @@ internal sealed partial class PetWindow
         if (!onHead) strokeHeadTime = Math.Max(0, strokeHeadTime - dt); // 手离开了头，害羞的程度也退下去
         strokeMaxTime = Math.Max(strokeMaxTime, strokeHeadTime);
 
+        // 30 秒彩蛋：单独一条更宽容的计时（速度 25 就算、停手只退 0.1/秒），和上面的旧计时互不影响。
+        bool deepMoving = engaged && onHead && speed > 25;
+        if (deepMoving) strokeDeepTime += dt;
+        else if (onHead) strokeDeepTime = Math.Max(0, strokeDeepTime - dt * .1);
+        else strokeDeepTime = Math.Max(0, strokeDeepTime - dt);
+        if (!melted && strokeDeepTime >= 30) melted = true;
+        double melt = melted ? 1 : Math.Clamp((strokeDeepTime - 27) / 3, 0, 1);
+        melt = Math.Round(melt * 30) / 30; // 每帧只发有变化的几个值，30 档够平滑
+
         var box = Behavior.HeadBox(Shape.Id);
         double hx = Left + Width * box.X, hy = Top + Height * box.Y, rx = Width * box.Rx, ry = Height * box.Ry;
         double ux = Math.Clamp((cur.X - hx) / rx, -1.3, 1.3), uy = Math.Clamp((cur.Y - hy) / ry, -1.3, 1.3);
@@ -257,9 +303,9 @@ internal sealed partial class PetWindow
         else if (strokeSide > 0 && ux < .5) strokeSide = 0;
         else if (strokeSide < 0 && ux > -.5) strokeSide = 0;
 
-        if (engaged && onHead)
+        if (melted || (engaged && onHead))
         {
-            var (sets, exps) = StrokeFace(strokeSide, zone == "face" && strokeSide == 0, strokeHeadTime);
+            var (sets, exps) = StrokeFace(strokeSide, zone == "face" && strokeSide == 0, strokeHeadTime, melt);
             string key = string.Join(',', sets.Select(pair => pair.Key + pair.Value)) + "|" + string.Join(',', exps);
             if (key != strokeFace) { strokeFace = key; Face(sets, exps); }
         }
@@ -267,10 +313,11 @@ internal sealed partial class PetWindow
 
         // 只动头：头朝着和手相反的方向转，眼睛看着手；速度只给头一点点跟手晃的味道。
         double fx = Math.Clamp(strokeVel.X / 600, -1, 1);
-        double amp = engaged && onHead ? 1 : 0;
+        double amp = engaged && onHead ? 1 : 0;           // 融化后头仍然 100% 跟着手走（用户定，2026-11-11）
+        double tilt = 6 * Math.Sin(Math.PI * melt) + 3 * melt; // 合眼时轻轻歪一下，融化后留一点
         Aim("FaceAngleX", amp * ux * 22);                 // 手在右，脸朝左（FaceAngleX 正是朝屏幕左）
         Aim("FaceAngleY", amp * uy * 14);                 // 手在上，脸朝下（FaceAngleY 负是低头）
-        Aim("FaceAngleZ", amp * (ux * 7 - fx * 5));       // 歪向转的那一边，再随手的晃动轻轻甩一下
+        Aim("FaceAngleZ", amp * (ux * 7 - fx * 5) + tilt); // 歪向转的那一边，再随手的晃动轻轻甩一下
         Aim("ParamEyeBallX", amp * Math.Clamp(-ux * .9, -1, 1)); // 眼睛看向手：手在右，眼珠往右（ParamEyeBallX 负是朝屏幕右）
         Aim("ParamEyeBallY", amp * Math.Clamp(-uy * .9, -1, 1)); // 手在上，眼珠往上
 

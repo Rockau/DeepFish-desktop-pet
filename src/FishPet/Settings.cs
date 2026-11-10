@@ -17,6 +17,12 @@ internal sealed class Settings
     public double TexScale { get; set; } = 1;
     // Her speech bubble, words and all, apart from her own size.
     public double BubbleScale { get; set; } = 1;
+    // 语音音量 0–1（本机加，2026-11-09）：固定台词的录音按这个音量放；0 就是静音，只出气泡。
+    public double Volume { get; set; } = 1;
+    // 语音总开关（本机加，2026-11-10）：关掉后所有说话都不出声、只出气泡，托盘里的音量滑块也跟着藏起来。
+    public bool VoiceEnabled { get; set; } = true;
+    // 音量 100% 时的实际响度：原来默认 0.8 太响，用户定成 0.8 的 20%。
+    internal const double VolumeMax = 0.16;
     // How long the bubble stays after her last word: 0 by how much she said (5 to 20 s), -1 until her next line or a click.
     public int BubbleSeconds { get; set; }
     // Out of the way while something else fills the screen, drawing nothing meanwhile (as the BigBlueFish pet does).
@@ -67,6 +73,7 @@ internal sealed class Settings
         Scale = Math.Clamp(double.IsFinite(Scale) ? Scale : 1, .5, 2);
         TexScale = TexScale >= 1 ? 1 : TexScale >= 0.5 ? 0.5 : 0.25;
         BubbleScale = Math.Clamp(double.IsFinite(BubbleScale) && BubbleScale > 0 ? BubbleScale : 1, .5, 2);
+        Volume = Math.Clamp(double.IsFinite(Volume) ? Volume : 1, 0, 1);
         BubbleSeconds = StayFor(BubbleSeconds);
         IdleSeconds = Math.Clamp(IdleSeconds, 15, 600);
         Birthday = Condition.NormalBirthday(Birthday) ?? "";

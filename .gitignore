@@ -1,45 +1,20 @@
-# 各人自己下载的东西，不随插件分享
-sdk/*
-!sdk/下载SDK.md
-model/*
-!model/获取模型.md
-
-# 本机编译和运行出来的东西
-renderer/build/
+﻿# 鏈満浜х墿锛屼笉杩涗粨搴?model/
+sdk/
 bin/
-src/**/bin/
-src/**/obj/
-tray/**/bin/
-tray/**/obj/
-tray/app/
+voice/ref/
 cache/
 check/
 settings.json
-errors.log
 api.json
+errors.log
 *.old
 *.tmp
-
-# 每个人自己的大肥鱼：亲密度、记忆小本本（都只存在本机，绝不上传）
-affection.json
-memory.json
-memory-archive.json
-
-# 托盘控制台自己记的
-tray/config.json
-tray/ui.json
-
-# hook 的本机记录
-hooks/**/hook.log
-hooks/**/sessions.json
-
-# 各人 Agent 在这个文件夹里的配置（里面有本机路径）
-.codex/
-.cursor/
-.claude/
-
-# 本机的记忆视图和变更记录、开发用录制和草稿（里面有用户自己的事或本机路径）
-memory.md
-memory-log.jsonl
-record/
-dev/
+tray/app/
+tray/*/bin/
+tray/*/obj/
+src/*/bin/
+src/*/obj/
+renderer/build/
+__pycache__/
+*.pyc
+output/

@@ -34,6 +34,20 @@ internal sealed partial class PetWindow
         affection.Save(AffectionFile);
     }
 
+    // 摸头彩蛋（30 秒）：「融化」一天一次 +3；当天用过了就退回普通摸头 +1（还是 60 秒一次）。
+    private void BondMelt()
+    {
+        if (test) return;
+        var change = affection.Apply("融化", DateTime.Now);
+        if (change.Delta == 0)
+        {
+            if (DateTime.UtcNow - lastStrokeGain <= TimeSpan.FromSeconds(60)) return;
+            affection.Apply("摸头", DateTime.Now);
+        }
+        lastStrokeGain = DateTime.UtcNow;
+        affection.Save(AffectionFile);
+    }
+
     // 点她之后：先记动静，再按反应加减分（摸头加，戳裙子、挨打扣；满档时戳裙子是“娇羞”，也照扣）。
     private void BondTouched(string? reaction)
     {
@@ -96,6 +110,19 @@ internal sealed partial class PetWindow
         affection.Save(AffectionFile);
         PlayOwn(said);
     }
+
+    // 专注陪伴正在进行（Work 段）：这时候只剩「摸她」和「工作区进展」会出声，
+    // 嘀咕、固定闲聊、小剧场（连同语音）都停掉（本机加，2026-11-09）。
+    internal bool FocusWork => focus.Now == FocusTimer.Phase.Work;
+
+    // 专注期间也允许的工作事件：授权/等你（要你处理）、完成、出错、测试结果、该休息、番茄钟自己那几句。
+    private static readonly HashSet<string> FocusEvents =
+    [
+        "授权", "等你", "完成", "长任务完成", "子任务完成", "出错", "编译失败", "测试通过", "该休息",
+        "番茄开始", "番茄提前结束", "番茄结束", "休息结束",
+    ];
+
+    internal static bool FocusEvent(string name) => FocusEvents.Contains(name);
 
     // 番茄结束那段话说完，休息里演一个平常的小剧场（不挑带条件、彩蛋的）。
     private async void RestSkitLater()
@@ -164,7 +191,7 @@ internal sealed partial class PetWindow
                 ChimeFiles[rising] = file;
             }
             chimePlayer.Open(new Uri(file));
-            chimePlayer.Volume = 0.6;
+            chimePlayer.Volume = settings.Volume * 0.75; // 跟着控制台的音量走（比说话轻一点）
             chimePlayer.Play();
         }
         catch (Exception error) { Places.Log("提示音放不出来：" + error.Message); }
