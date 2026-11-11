@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -14,7 +14,7 @@ internal sealed class Settings
     public int Fps { get; set; } = 60;
     public double Scale { get; set; } = 1;
     // 立绘清晰度：贴图缩放档位（1 = 高清 4096 原图、0.5 = 标准、0.25 = 流畅）。改档位要重启渲染器才生效。
-    public double TexScale { get; set; } = 1;
+    public double TexScale { get; set; } = 0.5;
     // Her speech bubble, words and all, apart from her own size.
     public double BubbleScale { get; set; } = 1;
     // How long the bubble stays after her last word: 0 by how much she said (5 to 20 s), -1 until her next line or a click.
@@ -22,7 +22,7 @@ internal sealed class Settings
     // Out of the way while something else fills the screen, drawing nothing meanwhile (as the BigBlueFish pet does).
     public bool HideOnFullscreen { get; set; } = true;
     // Whether she looks on GitHub for a newer plugin when she starts and twice a day (Updates).
-    public bool CheckUpdates { get; set; } = true;
+    public bool CheckUpdates { get; set; } = false;
     public bool FollowMouse { get; set; } = true;
     // 小剧场演出期间暂时关掉视线跟随鼠标（演完自动恢复）；在 settings.json 里改，不进 update_settings。（本机加，2026-11-06）
     public bool SkitPausesFollow { get; set; } = true;
@@ -32,13 +32,13 @@ internal sealed class Settings
     public bool MusicDance { get; set; } = true;
     // 启动时先收着：桌宠程序在运行，但她不露面，等用户叫她（show / say / coax）才出场。
     public bool StartHidden { get; set; }
-    // 拖到屏幕边上会弹回来，脸始终留在工作区里（默认）。关掉就能拖出屏幕，只留一小截在外面能拖回来。
-    public bool KeepOnScreen { get; set; } = true;
+    // 拖到屏幕边上会弹回来，脸始终留在工作区里。默认关：能拖出屏幕，只留一小截在外面能拖回来。
+    public bool KeepOnScreen { get; set; } = false;
     // Seconds between the small things she does by herself when nobody talks to her.
-    public int IdleSeconds { get; set; } = 40;
-    // 到点叫人（本机加，2026-11-08）：按这台电脑的时钟，00:30 起四层哄睡、11:30 午饭提醒；托盘“更多”里能单独关。
-    public bool CoaxSleep { get; set; } = true;
-    public bool CoaxLunch { get; set; } = true;
+    public int IdleSeconds { get; set; } = 180;
+    // 到点叫人（本机加，2026-11-08）：按这台电脑的时钟，00:30 起四层哄睡、11:30 午饭提醒。默认关，托盘“更多”里能开。
+    public bool CoaxSleep { get; set; } = false;
+    public bool CoaxLunch { get; set; } = false;
     // 用户的生日（MM-dd，比如 10-21）：那天她会说生日快乐、演生日小剧场（mutter.txt、skits.txt 里写着 @生日 的）。空着就没有。
     public string Birthday { get; set; } = "";
     // 待机自言自语：桌宠自己调大模型现编嘀咕。
