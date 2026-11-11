@@ -6,8 +6,8 @@ namespace FishPet;
 
 // 听到电脑在放音乐就跟着跳（本机加，2026-11-10）：
 //   · Music 拉起 audio\probe.ps1 采集系统声音，算出响度、低音、拍点；
-//   · 「跳」用的是身体动作里现成的那三个：摇摆一 / 摇摆二 / 慢摇（2026-11-10 用户要求），
-//     一句演完再换下一句；重拍时左右交替摇摆一、摇摆二，轻的时候只用慢摇；
+//   · 「跳」用的是身体动作里的「摇摆一」（2026-11-12 用户定了：身子左右转、头反着甩，转体那一支），
+//     一句演完再换下一句，节奏跟着 BPM 走；
 //   · 说话、摆姿势、被摸、被拖、被藏起来的时候让位，演完当前这一句就停。
 internal sealed partial class PetWindow
 {
@@ -17,8 +17,6 @@ internal sealed partial class PetWindow
     private DateTime danceMissAt;
 
     private DateTime danceNextAt;
-    private int danceStep;
-    private bool danceSlow;
     private readonly Dictionary<string, double> danceSent = [];
 
     // 她这会儿是不是真的在跟着音乐动（镜子/自检/日志用）。
@@ -94,26 +92,15 @@ internal sealed partial class PetWindow
         }
         if (now < danceNextAt) return;
 
-        // 轻/慢的时候只用慢摇；正常的时候摇摆一、摇摆二交替。
-        bool slow = beat.Level < .32 || (ears.Tempo > 0 && ears.Tempo < 84);
-        string word;
-        if (slow)
-        {
-            danceSlow = true;
-            word = "慢摇";
-        }
-        else
-        {
-            if (danceSlow) { danceStep = 0; danceSlow = false; }
-            word = danceStep % 2 == 0 ? "摇摆一" : "摇摆二";
-            danceStep++;
-        }
+        // 用户 2026-11-12：放歌跳「摇摆一」——身子左右转、头反着甩一下，幅度和速度都收着来。
+        const string word = "摇摆一";
         // 这一句演多久跟着 BPM 走：一拍多长（Dance.Seconds）就演几拍，BPM 越高律动越快（用户要的，2026-11-10）。
-        // 用户 2026-11-10：摇得太快、幅度太大 —— 频率减半（一句演两倍时长），幅度减半（size 0.5）
+        // ×2：频率减半；size 0.5：幅度减半（都是 2026-11-10 用户要的，别太大太快）。
         double wanted = Dance.Seconds(word, ears.Tempo) * 2;
         double length = body.DanceToBeat(word, wanted, .5);
         if (length <= 0) length = wanted;
-        danceNextAt = now.AddSeconds(Math.Clamp(length * .92, .5, 24)); // 上一句快演完再接下一句
+        // 摇摆一最后正好回到正中（0），所以下一句等这一句演完再接，不会两条轨道叠在一起抢。
+        danceNextAt = now.AddSeconds(Math.Clamp(length, .5, 24));
         if (now - danceLogAt > TimeSpan.FromSeconds(30))
         {
             danceLogAt = now;
@@ -129,7 +116,6 @@ internal sealed partial class PetWindow
                 if (!body.Shown.ContainsKey(id)) Send($"clear {id}");
         danceSent.Clear();
         Dancing = false;
-        danceSlow = false;
     }
 
     private bool DancingAllowed()

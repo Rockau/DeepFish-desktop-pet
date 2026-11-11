@@ -125,11 +125,11 @@ internal sealed partial class Body
     };
 
     // 一段舞：每一拍（hits）身体转到一边（正数转向屏幕左边，负数右边，绝对值是幅度），头往反方向转、反方向歪，
-    // 头在两边之间经过正中时抬到最高，两边最低，走出一个小拱形。gaps 是每一拍的长度（秒）；
-    // dip：同一边连着两拍时，两拍之间身体回弹一半（“顿”一下）。每条轨迹最后都回到 0。
+    // 头比身子晚 0.14 秒到，两头不是同一刻一起掉头，看着连贯；头还走一条小拱形（拍点低头、两拍中间抬头），就是点头。
+    // gaps 是每一拍的长度（秒）；dip：同一边连着两拍时，两拍之间身体回弹一半（“顿”一下）。每条轨迹最后都回到 0。
     private static Word Dance(double size, double[] beats, double[] hits, bool dip)
     {
-        // 整体速度降低 30%（用户，2026-11-06）：每一拍都拉长到 1/0.7 倍。头比身体晚半拍一点点（跟随），身体到头、头到身体不是同一刻一起掉头，看着更连贯。
+        // 整体速度降低 30%（用户，2026-11-06）：每一拍都拉长到 1/0.7 倍。
         var gaps = beats.Select(beat => beat / .7).ToArray();
         const double HeadLag = .14;
         var times = new double[hits.Length];
@@ -147,6 +147,7 @@ internal sealed partial class Body
             keys.Add((end + lag, 0));
             return string.Join(' ', keys.Select(key => Number(key.Time) + ":" + Number(key.Value * size)));
         }
+        // 点头的拱形（用户 2026-11-12 让加回来）：每一拍落到 low（低头），两拍中间抬到 high。
         string Arch(double high, double low, double lag = 0)
         {
             var keys = new List<(double Time, double Value)> { (0, 0) };
