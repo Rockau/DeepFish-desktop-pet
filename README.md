@@ -17,6 +17,29 @@
   <img src="docs/demo/talking.gif" width="420" alt="大肥鱼在桌面上说话、做表情">
 </p>
 
+<table align="center">
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/demo/momo.gif" width="300" alt="摸摸头"><br>
+      <sub>摸摸头，摸久了她会害羞</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/demo/desktop.gif" width="300" alt="在桌面上陪你"><br>
+      <sub>在桌面上陪你干活、说话</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/demo/report.gif" width="300" alt="工作播报"><br>
+      <sub>干活时在旁边播报，还会戴上眼镜</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/demo/dance.gif" width="300" alt="跟着音乐跳舞"><br>
+      <sub>听到有拍子的歌就跟着跳</sub>
+    </td>
+  </tr>
+</table>
+
 > 图里的语气、表情、气泡和动作都是 Agent 在回复里用〔〕写出来的，不是预录的动画。
 
 ## 她能做什么
