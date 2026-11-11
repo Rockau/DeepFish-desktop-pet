@@ -141,7 +141,9 @@ public partial class App : System.Windows.Application
     private async System.Threading.Tasks.Task Tick()
     {
         if (panel is null) return;
-        bool running = Pet.Running;
+        // 用接口判断她在不在（本机修，2026-11-11）：Process.GetProcessesByName("FishPet") 在这台机器上一直返回空，
+        // 会误判“桌宠没运行”，40 秒后把控制台和桌宠一起关掉，托盘图标就消失了。
+        bool running = panel.Hidden is not null;
         if (running) { petSeen = true; petGoneSince = null; }
         else
         {

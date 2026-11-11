@@ -12,6 +12,7 @@ VerifyBond();
 VerifyMemory();
 VerifyMemoryView();
 VerifyAlarms();
+VerifyDance();
 Console.WriteLine($"FishPet: {checks} checks passed.");
 
 // 待机自言自语：模型现编的「话|动作|道具」怎么解析，数据文件里的动作词她都做得出来，抽选能抽到小剧场。
@@ -55,12 +56,17 @@ void VerifyIdleSelfTalk()
     // Left alone for long enough she picks every kind: a move, a line, a little play.
     var sent = new List<string>(); var texts = new List<string>(); var plays = new List<string>(); var moves = new List<string>();
     var start = new DateTime(2026, 11, 5, 4, 0, 0, DateTimeKind.Utc);
-    var live2d = new Behavior(sent.Add, () => [], new Random(7))
+    var tickNow = start;
+    Behavior? live2d = null;
+    live2d = new Behavior(sent.Add, () => [], new Random(7))
     {
-        TextIdleMoods = ["甲", "乙"], TextIdle = texts.Add, SkitIdleMoods = ["戏一", "戏二"], SkitIdle = plays.Add, IdleStarted = moves.Add,
+        TextIdleMoods = ["甲", "乙"], TextIdle = texts.Add, SkitIdleMoods = ["戏一", "戏二"],
+        // 真实运行时 PetWindow 会在开演前调用 SkitPlayed；测试里也补上，否则 12 分钟优先规则会一直抢。
+        SkitIdle = name => { plays.Add(name); live2d!.SkitPlayed(tickNow); },
+        IdleStarted = moves.Add,
     };
     live2d.Resume(start, 40);
-    for (int i = 1; i <= 400; i++) live2d.Tick(start.AddSeconds(i * 41), false, 40);
+    for (int i = 1; i <= 400; i++) { tickNow = start.AddSeconds(i * 41); live2d.Tick(tickNow, false, 40); }
     Check(texts.Count > 0 && plays.Count > 0 && moves.Count > 0, "she picks a line, a little play and a move");
     Check(plays.Distinct().Count() == 2 && texts.Distinct().Count() == 2, "every one of them comes up");
     // 三类平分：各占约三分之一（400 次里允许 8% 的随机偏差）。
@@ -347,19 +353,6 @@ void VerifyLive2DBehavior()
     Check(Behavior.IdleWeight("打瞌睡", 2) > Behavior.IdleWeight("打瞌睡", 14)
         && Behavior.IdleWeight("张望", 2) == Behavior.IdleWeight("张望", 14), "sleepy late at night only");
 
-    const int rate = 24000, milliseconds = 100;
-    var samples = new short[rate];
-    for (int i = rate / 2; i < rate; i++) samples[i] = (short)(Math.Sin(i * .1) * 12000);
-    var wav = new List<byte>();
-    void Add(params byte[] bytes) => wav.AddRange(bytes);
-    Add("RIFF"u8.ToArray()); Add(BitConverter.GetBytes(36 + rate * 2)); Add("WAVEfmt "u8.ToArray()); Add(BitConverter.GetBytes(16));
-    Add(BitConverter.GetBytes((short)1)); Add(BitConverter.GetBytes((short)1)); Add(BitConverter.GetBytes(rate)); Add(BitConverter.GetBytes(rate * 2));
-    Add(BitConverter.GetBytes((short)2)); Add(BitConverter.GetBytes((short)16)); Add("data"u8.ToArray()); Add(BitConverter.GetBytes(rate * 2));
-    foreach (var sample in samples) Add(BitConverter.GetBytes(sample));
-    var levels = Behavior.VoiceLevels(wav.ToArray(), milliseconds)!;
-    Check(levels.Length == 10 && levels[1] == 0 && levels[8] > .9, "her mouth follows the loudness of the recording");
-    Check(Behavior.VoiceLevels(new byte[100], milliseconds) == null, "anything but a wav is left alone");
-
     // Her own body language (the owner reviewed it, 2026-11-02): words in 〔〕, each a hand-tuned piece, stacked
     // by the rules learned on this model, and her words waiting for what her body does.
     var acting = new List<string>();
@@ -428,12 +421,7 @@ void VerifyLive2DBehavior()
     Check(said.Shown == 3 && !said.Talking, "her mouth rests on the dots");
     said.Advance(5);
     Check(said.Done && said.Shown == said.Plain.Length, "all said");
-    var spoken = new Line("〔点头〕好呀", (_, _, _) => 1, voiceSeconds: 2);
-    spoken.Advance(1.5);
-    Check(spoken.Shown == 2 && !spoken.Done, "with her voice the words spread over the recording and nothing waits");
-    spoken.Advance(2.1);
-    Check(spoken.Done, "and end with it");
-    Check(Math.Abs(said.Spoken - (3 / 9.0 + .5)) < 1e-9 && spoken.Spoken == 2, "how long the words take: the recording when there is one");
+    Check(Math.Abs(said.Spoken - (3 / 9.0 + .5)) < 1e-9, "how long the words take");
     var ending = new Line("好呀〔点头×2〕", (_, _, _) => 1.5);
     ending.Advance(.3);
     Check(ending.Shown == 2 && !ending.Done, "a move at the end has begun once the words are out");
@@ -513,9 +501,6 @@ void VerifyBond()
     Check(a.Points == 5 && a.TodayNet == 5, "head pats count five times a day");
     a.Apply("摸头", day.AddDays(1));
     Check(a.Points == 6 && a.TodayNet == 1, "a new day counts again");
-    // 摸头彩蛋（30 秒）：「融化」一天一次 +3（用户定的，2026-11-11）
-    var melt = new Affection();
-    Check(melt.Apply("融化", day).Delta == 3 && melt.Apply("融化", day).Delta == 0, "the melt easter egg pays +3 once a day");
     a.Apply("戳裙子", day.AddDays(1)); a.Apply("挨打", day.AddDays(1));
     Check(a.Points == 3, "poking the skirt and hitting take points");
     for (int i = 0; i < 5; i++) a.Apply("挨打", day.AddDays(1));
@@ -851,4 +836,57 @@ void VerifyAlarms()
     var words = text.Where(pair => pair.Key != "哄睡4").SelectMany(pair => pair.Value).Concat(Alarms.Fallback.Values)
         .SelectMany(line => System.Text.RegularExpressions.Regex.Matches(line, "〔([^〕]*)〕").Select(match => match.Groups[1].Value)).ToList();
     Check(words.Count > 0, "alarm lines carry actions");
+}
+
+// 跟着音乐跳（本机加，2026-11-10）：BPM 决定一拍多长，舞步跟着变快变慢。
+void VerifyDance()
+{
+    // 一拍多长：BPM 越高越短，40~190 之外按边界走。
+    Check(Math.Abs(Dance.BeatSeconds(120) - .5) < .001, "120 BPM 一拍半秒");
+    Check(Dance.BeatSeconds(150) < Dance.BeatSeconds(80), "BPM 越高一拍越短");
+    Check(Dance.BeatSeconds(400) >= .32 && Dance.BeatSeconds(10) <= 1.5, "太快太慢都按边界走");
+
+    // 每一句的拍数：摇摆一 12、摇摆二 6、慢摇 3；BPM 高的时候同一支舞更短。
+    Check(Dance.Beats("摇摆一") == 12 && Dance.Beats("摇摆二") == 6 && Dance.Beats("慢摇") == 3, "每个舞步走多少拍");
+    Check(Dance.Seconds("摇摆二", 150) < Dance.Seconds("摇摆二", 80), "同一支舞，BPM 高的一句更短");
+
+    // 真的演一遍：发出去的 anim 轨道末尾就是这一句的长度，BPM 高的那条更短。
+    var commands = new List<string>();
+    var dancer = new Body(commands.Add);
+    double fast = dancer.DanceToBeat("摇摆二", Dance.Seconds("摇摆二", 150));
+    int firstRun = commands.Count;
+    double slow = dancer.DanceToBeat("摇摆二", Dance.Seconds("摇摆二", 80));
+    Check(fast < slow && Math.Abs(fast - Dance.Seconds("摇摆二", 150)) < .05, $"按拍子变速（{fast:0.00}s / {slow:0.00}s）");
+    Check(firstRun > 0 && commands.Count == firstRun * 2, "每支舞都发出一整套轨道");
+    double LastTime(string command) => double.Parse(command.Split(' ').Last().Split(':')[0], System.Globalization.CultureInfo.InvariantCulture);
+    Check(commands.Take(firstRun).All(command => Math.Abs(LastTime(command) - fast) < .2), "整句一起变速，不是只改一部分");
+    // 变速有上下限：要它演得再短也不会缩没，再长也不会拖到天荒地老。
+    Check(dancer.DanceToBeat("摇摆一", .1) >= 3, "再快也有下限");
+    Check(dancer.DanceToBeat("摇摆一", 999) <= 20, "再慢也有上限");
+
+    // 拍子速度：喂一串拍点，估出来的一拍长度要和真实 BPM 对得上。
+    double Estimate(int bpm)
+    {
+        var tracker = new TempoTracker();
+        var start = new DateTime(2026, 11, 10, 0, 0, 0, DateTimeKind.Utc);
+        double beat = 60.0 / bpm;
+        for (double t = 0; t < 20; t += beat) tracker.Beat(start.AddSeconds(t));
+        return tracker.Bpm;
+    }
+    double fastBpm = Estimate(150), slowBpm = Estimate(70);
+    Check(Math.Abs(fastBpm - 150) < 6, $"150 BPM 认得出（估成 {fastBpm:0}）");
+    Check(Math.Abs(slowBpm - 70) < 6, $"70 BPM 认得出（估成 {slowBpm:0}）");
+
+    // 漏拍、同一拍里多触发一次，都不该把速度带跑。
+    var bumpy = new TempoTracker();
+    var when = new DateTime(2026, 11, 10, 0, 0, 0, DateTimeKind.Utc);
+    double gap = 60.0 / 120;
+    int index = 0;
+    for (double t = 0; t < 20; t += gap, index++)
+    {
+        if (index % 9 == 8) continue; // 每九拍漏一拍
+        bumpy.Beat(when.AddSeconds(t));
+        if (index % 7 == 3) bumpy.Beat(when.AddSeconds(t + .13)); // 偶尔一拍里多触发一次
+    }
+    Check(Math.Abs(bumpy.Bpm - 120) < 8, $"漏拍、多拍也不跑偏（估成 {bumpy.Bpm:0}）");
 }

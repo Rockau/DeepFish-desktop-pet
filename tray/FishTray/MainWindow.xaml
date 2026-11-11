@@ -193,24 +193,6 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 声音 -->
-                    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14,16,8" Margin="0,0,0,6">
-                        <StackPanel>
-                            <Grid Margin="0,2,0,10">
-                                <TextBlock Text="语音（说话出声）" VerticalAlignment="Center"/>
-                                <ToggleButton x:Name="SwVoice" Style="{StaticResource Switch}" HorizontalAlignment="Right" IsChecked="True"/>
-                            </Grid>
-                            <StackPanel x:Name="VolumePanel">
-                                <Grid>
-                                    <TextBlock Text="音量" Style="{StaticResource Caption}"/>
-                                    <TextBlock x:Name="VolumeValue" Text="80%" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
-                                </Grid>
-                                <Slider x:Name="VolumeSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="100" SmallChange="5" LargeChange="10" TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
-                                <Grid x:Name="VolumeMarks" Height="18" Margin="0,0,0,8"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
                     </StackPanel>
 
                     <!-- 常用：右键任意按钮加入 / 移出 -->

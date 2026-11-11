@@ -40,7 +40,7 @@ internal sealed partial class PetWindow
         RunStage(slot.Stage);
         var bubbles = text.Split('／', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var bubble in bubbles)
-            _ = InTurn(() => { if (!exiting) SayLine(bubble, null); return Task.CompletedTask; }, CancellationToken.None);
+            _ = InTurn(() => { if (!exiting) SayLine(bubble); return Task.CompletedTask; }, CancellationToken.None);
     }
 
     private string AlarmLine(string name)

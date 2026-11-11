@@ -145,6 +145,7 @@ internal sealed partial class PetWindow
         var at = e.GetPosition(this);
         if (!OnHead(at, out _)) return; // 只有摸头：别的地方右键不算
         e.Handled = true;
+        RaiseAboveAll();
         stroking = true;
         strokeTravel = strokeMoving = strokeMaxTime = strokeHeadTime = 0;
         strokeDeepTime = 0; melted = false; afterStrokeMelt = false;
@@ -246,7 +247,7 @@ internal sealed partial class PetWindow
             lastStrokeGain = DateTime.UtcNow;
             BondGain("摸头");
         }
-        if (!speech.IsSaying && voice == null) SayTouch(key);
+        if (!speech.IsSaying) SayTouch(key);
     }
 
     // 脸：side 是手靠近头的哪一侧（屏幕上的），face 为 true 表示手在脸上；t 是摸了多久（秒）。

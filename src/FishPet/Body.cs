@@ -250,6 +250,8 @@ internal sealed partial class Body
     internal IReadOnlyCollection<string> Overlays => overlays;
     internal bool HandUp => hand != null;
     internal bool Posing => channels.Count > 0 || overlays.Count > 0 || hand != null;
+    // 她这会儿用 set 按住不放的参数（音乐律动收工时不去 clear 这些，否则会把她的神情/姿势一起收掉）。
+    internal IReadOnlyDictionary<string, double> Shown => shown;
     // Words her body could not do, for telling her so in her own terms.
     internal List<string> Unknown { get; } = [];
 
@@ -369,6 +371,20 @@ internal sealed partial class Body
 
     private static Word? Find(string name) => Words.TryGetValue(name, out var make) ? make(null, 1, null) : null;
 
+    // 音乐律动用（本机加，2026-11-10）：把现成的舞步按拍子变速演一遍——BPM 高就放快、BPM 低就放慢。
+    // seconds 是这一句该演多久（Dance.Seconds 算的：拍数 × 一拍）；返回实际演了多久（变速有 .45~2.4 的限制）。
+    // 只发 anim 轨道，不碰通道和表情：这些舞步本来就是纯粹的一串轨迹，演完自己回原样。
+    internal double DanceToBeat(string word, double seconds, double size = 1)
+    {
+        if (!Words.TryGetValue(word, out var make)) return 0;
+        if (make(null, size, null).Move is not { } move) return 0;
+        double natural = move.Max(track => End(track.Keys));
+        if (natural <= 0 || seconds <= 0) return 0;
+        double pace = Math.Clamp(seconds / natural, .45, 2.4);
+        foreach (var (id, keys) in move) send($"anim {id} {Pace(keys, pace)}");
+        return natural * pace;
+    }
+
     private void PutHandDown()
     {
         if (hand is { } up) send($"motion {up.Off}");
@@ -420,8 +436,7 @@ internal sealed partial class Body
 }
 
 // One thing she says, acted out: the words come at a speaking pace, and each 〔〕 holds them until her body has
-// shown it, so what she says and does stay together. With her recorded voice the words spread over its length
-// instead and nothing waits: a recording cannot pause.
+// shown it, so what she says and does stay together.
 internal sealed class Line
 {
     internal const double CharactersPerSecond = 9;
@@ -430,7 +445,6 @@ internal sealed class Line
     private readonly List<(string? Cue, int End, double Seconds, bool Talks)> steps = [];
     // act(cue, spoken, tone): spoken is how long the words after it take, tone their "！" or "…" (Body.Apply).
     private readonly Func<string, double, char, double> act;
-    private readonly bool recorded;
     private int index;
     private double at, clock;
 
@@ -453,10 +467,9 @@ internal sealed class Line
         return lines;
     }
 
-    internal Line(string text, Func<string, double, char, double> act, double? voiceSeconds = null, double charactersPerSecond = CharactersPerSecond)
+    internal Line(string text, Func<string, double, char, double> act, double charactersPerSecond = CharactersPerSecond)
     {
         this.act = act;
-        recorded = voiceSeconds is > 0;
         var plain = new System.Text.StringBuilder();
         foreach (var (cue, words) in Body.Parts(text))
         {
@@ -471,10 +484,7 @@ internal sealed class Line
             }
         }
         Plain = plain.ToString();
-        double total = steps.Sum(step => step.Seconds);
-        if (recorded && total > 0)
-            for (int i = 0; i < steps.Count; i++) steps[i] = steps[i] with { Seconds = steps[i].Seconds * voiceSeconds!.Value / total };
-        Spoken = recorded ? voiceSeconds!.Value : total;
+        Spoken = steps.Sum(step => step.Seconds);
     }
 
     // The words between a cue and the next: how long they take to say, and whether they are said with a "！" or trail off.
@@ -511,7 +521,7 @@ internal sealed class Line
             {
                 var (spoken, tone) = After(index);
                 double wait = act(cue, spoken, tone);
-                if (!recorded) at += wait;
+                at += wait;
                 index++;
                 continue;
             }
@@ -522,3 +532,4 @@ internal sealed class Line
         }
     }
 }
+

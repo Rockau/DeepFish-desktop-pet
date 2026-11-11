@@ -62,7 +62,7 @@ internal sealed class Behavior
             [("LeanInput", "0:0 .5:-9 3.3:-8 4:0"), ("FaceAngleZ", "0:0 .7:3 1.5:-3 2.3:3 3.1:-2 4:0"), ("ViewSquash", "0:0 .4:.02 3.4:.02 4:0")]),
         ["摸后腻歪"] = new(["脸红"], [("EyeSmile", .6), ("ParamMouthForm", 1), ("MouthPressLipOpen", .4), ("BrowInnerUp", .6), ("FaceAngleY", -6), ("FaceAngleZ", 9)], 4.8,
             [("LeanInput", "0:0 .5:-15 3.9:-14 4.8:0"), ("FaceAngleZ", "0:0 .8:3 1.6:-3 2.4:3 3.2:-3 4:2 4.8:0"), ("FaceAngleX", "0:0 .8:-4 1.8:4 2.8:-4 3.8:3 4.8:0"), ("ViewSquash", "0:0 .5:.03 4.1:.03 4.8:0")], ("默认手切举手", "举手切默认手")),
-        // 摸头彩蛋（本机加，2026-11-11）：有效抚摸满 20 秒、融化后松手。脸红 + 手抬到胸口 + 快眨两下，6 秒（爱心眼已按用户要求去掉）。
+        // 摸头彩蛋（本机加，2026-11-11）：有效抚摸满 20 秒、融化后松手。脸红 + 手抬到胸口 + 快眨两下，6 秒。
         // 前倾：松手时按住 -17，表情里用动画加 0→+1 慢慢回到 -16，结束再交回给 clear 淡出，不会和旧值叠起来弹一下。
         ["摸后融化"] = new(["脸红"], [("EyeSmile", .55), ("ParamMouthForm", .9), ("MouthPressLipOpen", .35), ("BrowInnerUp", .5), ("FaceAngleY", -4), ("FaceAngleZ", 4), ("LeanInput", -17)], 6,
             [("LeanInput", "0:0 .8:1 4.8:1 6:0"), ("FaceAngleZ", "0:0 .8:5 2:-2 3.6:3 6:0"), ("FaceAngleX", "0:0 .7:-3 2.2:2 3.8:-2 6:0"),
@@ -277,6 +277,10 @@ internal sealed class Behavior
     private (DateTime Day, int Hour)? lastChime;
     // 钟点刚过几分钟内才算“整点”（她那会儿在说话、被摸，就等到闲下来；过了这几分钟就算错过，不补报）。
     internal const int ChimeMinutes = 3;
+    // 小剧场：上次演完的时间；太久没演就下一次直接给它（2026-11-10 用户反馈「有时不会触发」）
+    private DateTime lastSkitAt = DateTime.MinValue;
+    internal void SkitPlayed(DateTime now) => lastSkitAt = now;
+    internal void SkitMissed(DateTime now) { if (now > lastSkitAt) nextIdle = now.AddSeconds(45); }
 
     internal void Tick(DateTime now, bool speaking, int intervalSeconds)
     {
@@ -301,6 +305,12 @@ internal sealed class Behavior
         // 类内：小动作夜里犯困的权重高；嘀咕、小剧场按条件加权（不符合条件的这次不抽）；类里一条都抽不了就不算这一类。
         var texts = Quiet ? [] : Weighted(TextIdleMoods, TextWeight, local);
         var plays = Quiet ? [] : Weighted(SkitIdleMoods, SkitWeightOf, local);
+        // 超过 12 分钟没演小剧场：这一轮直接演，不再和别的待机动作抢（2026-11-10）
+        if (!Quiet && plays.Length > 0 && now - lastSkitAt > TimeSpan.FromMinutes(12))
+        {
+            SkitIdle?.Invoke(PickWeighted(plays));
+            return;
+        }
         var kinds = new List<int>();
         if (actions.Length > 0) kinds.Add(0);
         if (texts.Length > 0) kinds.Add(1);
@@ -342,48 +352,5 @@ internal sealed class Behavior
         }
         return items[^1].Name;
     }
-
-    // How open her mouth is, one value per step of a 16-bit PCM wav; null for anything else.
-    internal static float[]? VoiceLevels(byte[] wav, int stepMilliseconds)
-    {
-        if (wav.Length < 44 || Encoding.ASCII.GetString(wav, 0, 4) != "RIFF" || Encoding.ASCII.GetString(wav, 8, 4) != "WAVE") return null;
-        int channels = 0, rate = 0, bits = 0;
-        for (int at = 12; at + 8 <= wav.Length;)
-        {
-            string chunk = Encoding.ASCII.GetString(wav, at, 4);
-            int size = BitConverter.ToInt32(wav, at + 4), start = at + 8;
-            if (size < 0) return null;
-            if (chunk == "fmt " && start + 16 <= wav.Length)
-            {
-                channels = BitConverter.ToInt16(wav, start + 2); rate = BitConverter.ToInt32(wav, start + 4); bits = BitConverter.ToInt16(wav, start + 14);
-            }
-            else if (chunk == "data")
-            {
-                if (bits != 16 || channels < 1 || rate < 1) return null;
-                return Levels(wav, start, Math.Min(size, wav.Length - start), channels, rate, stepMilliseconds);
-            }
-            at = start + size + (size & 1);
-        }
-        return null;
-    }
-
-    private static float[] Levels(byte[] wav, int start, int size, int channels, int rate, int stepMilliseconds)
-    {
-        int window = Math.Max(1, rate * stepMilliseconds / 1000) * channels * 2;
-        var loudness = new float[size / window];
-        for (int step = 0; step < loudness.Length; step++)
-        {
-            double sum = 0;
-            for (int at = start + step * window; at + 1 < start + (step + 1) * window; at += 2)
-            {
-                double sample = BitConverter.ToInt16(wav, at) / 32768.0;
-                sum += sample * sample;
-            }
-            loudness[step] = (float)Math.Sqrt(sum / (window / 2));
-        }
-        // Against the loud parts of this recording, so a quiet voice opens her mouth as far as a loud one.
-        float peak = loudness.Length == 0 ? 0 : loudness.Order().ElementAt(loudness.Length * 95 / 100);
-        if (peak <= 0) return new float[loudness.Length];
-        return loudness.Select(level => level / peak < .12f ? 0f : (float)Math.Min(1, Math.Sqrt(level / peak))).ToArray();
-    }
 }
+
