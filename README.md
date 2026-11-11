@@ -141,6 +141,10 @@
 - **完全退出 Agent**：她和 Agent 断开后，大约过一分钟会自己鞠躬退场，任务栏的小鲸鱼也会跟着消失。想马上收掉：右键小鲸鱼选“退出控制台”。
 - **再回来**：下次启动 Agent、连上 MCP，她会自动出来；也可以直接运行 `bin\FishPet.exe`。
 
+## 分享给别人
+
+只分享插件本身：`sdk\`、`model\`、`renderer\build\`、`bin\`、`cache\`、`check\` 都不要带；自己机器上的 `settings.json`、`api.json`、`affection.json`、`memory*.json`、`errors.log`、`tray\ui.json`、`tray\tray.log` 也先删掉——不然别人装好拿到的会是你的设置、记忆和 API key，而不是默认设置。
+
 ## 关注和更新
 
 **她会自己查更新**：桌宠启动时和之后每 12 小时，会去 GitHub 看一眼这个仓库有没有新版本（只读公开的版本记录，不上传任何东西）。有的话 Agent 会告诉你改了什么、问你要不要更新。用 git 拉下来的才查得到（让 Agent 带你装的就是）。不想让她查，在托盘里关掉“检查插件新版本”。

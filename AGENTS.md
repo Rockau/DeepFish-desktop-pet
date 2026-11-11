@@ -266,7 +266,7 @@ def run_tool(name: str, arguments: dict) -> dict:
   - 没有这个标签，但 Agent 自己用沙箱或受限权限去启动 MCP 服务：要在那个 Agent 的设置里让这个服务不受限地运行，怎么设看它自己的说明。
 - **想换位置**：让用户直接用鼠标拖她，位置会记住。她可以一半沉到任务栏后面，脸会留在外面。
 - **想卸载**：先 `quit`，从接着它的 AI 的 MCP 配置里删掉 dafeiyu，再删掉整个插件文件夹。
-- **用户想把插件分享给别人**：只分享插件本身，`sdk\`、`model\`、`renderer\build\`、`bin\` 都不要带上（`.gitignore` 已经排除了它们）。
+- **用户想把插件分享给别人**：只分享插件本身，`sdk\`、`model\`、`renderer\build\`、`bin\`、`cache\`、`check\` 都不要带上（`.gitignore` 已经排除了它们）。你自己机器上的这些也要先删掉，不然别人拿到的是你的设置和记忆、不是默认设置：`settings.json`（里面有 LLM API key）、`api.json`、`affection.json`、`memory*.json`、`errors.log`、`tray\ui.json`、`tray\tray.log`。
 
 ## 更新插件
 
