@@ -55,8 +55,8 @@ internal static class Pet
         catch { return null; }
     }
 
-    // 调一个工具。返回里的 JSON；连不上或工具报错返回 null。
-    internal static async Task<JsonElement?> Call(string tool, object? args = null)
+    // 调一个工具。返回里的 JSON；连不上或工具报错返回 null。seconds：等多久（查 GitHub 要久一点）。
+    internal static async Task<JsonElement?> Call(string tool, object? args = null, double seconds = 4)
     {
         if (Api() is not { } api) return null;
         try
@@ -65,7 +65,7 @@ internal static class Pet
             { Content = new StringContent(JsonSerializer.Serialize(args ?? new { }), Encoding.UTF8, "application/json") };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", api.Token);
             request.Headers.Add("X-FishTray", "1");
-            using var response = await Http.SendAsync(request).WaitAsync(TimeSpan.FromSeconds(4));
+            using var response = await Http.SendAsync(request).WaitAsync(TimeSpan.FromSeconds(seconds));
             using var outer = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             if (outer.RootElement.TryGetProperty("isError", out var error) && error.ValueKind == JsonValueKind.True) return null;
             var text = outer.RootElement.GetProperty("content")[0].GetProperty("text").GetString();

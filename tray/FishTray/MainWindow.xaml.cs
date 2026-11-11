@@ -98,7 +98,7 @@ public partial class MainWindow : Window
         SetupSlider(BubbleSlider, BubbleMarks, BubbleValue, v => $"{v:0.0}×", (0.5, "0.5×"), (1, "1.0×"), (1.5, "1.5×"), (2, "2.0×"));
         SetupSlider(IdleSlider, IdleMarks, IdleValue, v => SecondsText(IdleStops[(int)Math.Round(v)]),
             (0, "15秒"), (Array.IndexOf(IdleStops, 30), "30秒"), (Array.IndexOf(IdleStops, 60), "1分"), (Array.IndexOf(IdleStops, 120), "2分"), (Array.IndexOf(IdleStops, 300), "5分"), (IdleStops.Length - 1, "10分"));
-        Wire(SwFollow, "follow_mouse"); Wire(SwFull, "hide_on_fullscreen"); Wire(SwStartHidden, "start_hidden"); Wire(SwKeepOn, "keep_on_screen"); Wire(SwUpdates, "check_updates"); Wire(SwCoaxSleep, "coax_sleep"); Wire(SwCoaxLunch, "coax_lunch");
+        Wire(SwMusicDance, "music_dance"); Wire(SwFollow, "follow_mouse"); Wire(SwFull, "hide_on_fullscreen"); Wire(SwStartHidden, "start_hidden"); Wire(SwKeepOn, "keep_on_screen"); Wire(SwCoaxSleep, "coax_sleep"); Wire(SwCoaxLunch, "coax_lunch");
 
         ShowSwitch.Click += async (_, _) => await SetShown(ShowSwitch.IsChecked == true);
         CloseButton.Click += (_, _) => Hide();
@@ -110,6 +110,7 @@ public partial class MainWindow : Window
         SayBox.KeyDown += async (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; await SaySomething(); } };
         SayBox.TextChanged += (_, _) => SayHint.Visibility = SayBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         ResetButton.Click += async (_, _) => await ResetAll();
+        UpdateButton.Click += async (_, _) => await CheckUpdate();
         SearchBox.TextChanged += (_, _) => ApplyFilter();
         SearchClear.Click += (_, _) => { SearchBox.Clear(); SearchBox.Focus(); };
         SizeChanged += (_, _) => { if (!moved && IsVisible) Anchor(); else if (IsVisible) KeepOnScreen(); };
@@ -634,6 +635,35 @@ public partial class MainWindow : Window
         else Notice(Pet.Running ? "没做成，再点一下试试" : "桌宠没有运行");
     }
 
+    // 检查更新（用户 2026-11-12 要的）：按一下就去问 GitHub，结果直接写在按钮下面，不占用设置里的开关。
+    private async Task CheckUpdate()
+    {
+        UpdateButton.IsEnabled = false;
+        UpdateNote.Visibility = Visibility.Visible;
+        UpdateNote.Text = "正在问 GitHub…";
+        var result = await Pet.Call("check_update", null, 25);
+        UpdateButton.IsEnabled = true;
+        if (result is not { } r)
+        {
+            UpdateNote.Text = Pet.Running ? "没查成：桌宠那边没回话，再点一下试试" : "桌宠没有运行，先让她出来";
+            return;
+        }
+        string Text(string key) => r.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        var state = Text("state");
+        var error = Text("error");
+        var behind = r.TryGetProperty("behind", out var b) && b.TryGetInt32(out var n) ? n : 0;
+        string? newest = r.TryGetProperty("changes", out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Select(e => e.GetString() ?? "").FirstOrDefault(line => line.Length > 0) : null;
+        UpdateNote.Text = state switch
+        {
+            "latest" => "已是最新版本",
+            "behind" => $"有新版本：落后 {behind} 个提交" + (newest is { Length: > 0 } ? "\n最新一条：" + newest : "") + "\n跟 Agent 说一句「更新大肥鱼插件」就行",
+            "nogit" => "查不了：这份不是用 git 拉下来的副本",
+            "failed" => "检查失败：" + (error.Length > 0 ? error : "原因不明"),
+            _ => "检查失败：原因不明",
+        };
+    }
+
     // 桌宠说脸上现在开着哪些，按钮的高亮跟着变（刚点过的 4 秒内不被覆盖）
     private void SyncToggles(JsonElement state, bool force = false)
     {
@@ -764,11 +794,10 @@ public partial class MainWindow : Window
             if (Fresh("bubble_scale")) BubbleSlider.Value = Math.Clamp(D("bubble_scale", 1), 0.5, 2);
             if (Fresh("stay")) SetSeg(staySeg, Array.IndexOf(StayValues, (int)D("bubble_seconds")));
             if (Fresh("quality")) SetSeg(qualitySeg, Math.Max(0, Array.IndexOf(QualityValues, D("tex_scale", 1))));
-            if (Fresh("follow_mouse")) SwFollow.IsChecked = B("follow_mouse");
-            if (Fresh("hide_on_fullscreen")) SwFull.IsChecked = B("hide_on_fullscreen");
+            if (Fresh("music_dance")) SwMusicDance.IsChecked = B("music_dance");
+            if (Fresh("follow_mouse")) SwFollow.IsChecked = B("follow_mouse");            if (Fresh("hide_on_fullscreen")) SwFull.IsChecked = B("hide_on_fullscreen");
             if (Fresh("start_hidden")) SwStartHidden.IsChecked = B("start_hidden");
             if (Fresh("keep_on_screen")) SwKeepOn.IsChecked = B("keep_on_screen");
-            if (Fresh("check_updates")) SwUpdates.IsChecked = B("check_updates");
             if (Fresh("coax_sleep")) SwCoaxSleep.IsChecked = B("coax_sleep");
             if (Fresh("coax_lunch")) SwCoaxLunch.IsChecked = B("coax_lunch");
             if (!dressBuilt) { var all = A("clothes").Concat(A("accessories")).ToArray(); if (all.Length > 0) BuildDress(all); }

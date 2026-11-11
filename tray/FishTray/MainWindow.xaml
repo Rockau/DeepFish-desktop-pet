@@ -242,6 +242,10 @@
 
                         <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,6" Margin="0,0,0,12">
                             <StackPanel>
+                                <Grid Margin="0,8" ToolTip="电脑在放有拍子的歌时，她会跟着慢慢左右摆；说话、被摸、被拖的时候自动让位">
+                                    <TextBlock Text="听音乐跳舞" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwMusicDance" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
                                 <Grid Margin="0,8">
                                     <TextBlock Text="视线跟着鼠标" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="SwFollow" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
@@ -258,10 +262,6 @@
                                     <TextBlock Text="拖到屏幕边弹回来" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="SwKeepOn" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                                 </Grid>
-                                <Grid Margin="0,8">
-                                    <TextBlock Text="检查插件新版本" VerticalAlignment="Center"/>
-                                    <ToggleButton x:Name="SwUpdates" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                </Grid>
                                 <Grid Margin="0,8" ToolTip="每晚 00:30、00:40、00:45、00:47 四层，按这台电脑的时间">
                                     <TextBlock Text="哄睡提醒（00:30 起）" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="SwCoaxSleep" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
@@ -272,6 +272,12 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
+
+                        <!-- 最底下：检查更新（动作，不是开关；结果就写在按钮下面） -->
+                        <StackPanel Margin="0,0,0,14">
+                            <Button x:Name="UpdateButton" Style="{StaticResource Ghost}" Content="检查更新" HorizontalAlignment="Left" Padding="18,7"/>
+                            <TextBlock x:Name="UpdateNote" Style="{StaticResource Caption}" Margin="2,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                        </StackPanel>
 
                     </StackPanel>
                     </StackPanel>

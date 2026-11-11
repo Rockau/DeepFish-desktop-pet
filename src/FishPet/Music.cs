@@ -83,7 +83,8 @@ internal sealed class Music : IDisposable
     // 白名单里的音乐软件此刻有没有在出声。
     // 两条都满足才算：① 它自己电平 ≥ 0.03（太小就是暂停/残留）；② 它是当前最响的几个之一（≥ 最响的 50%）
     // ——这样放歌时算，聊天/视频盖过音乐时不算（2026-11-10 改，之前固定 0.05 太死板）。
-    internal bool AppPlaying(string whitelist)
+    // keep：已经在跳的时候门槛放低（0.015 / 28%），免得音量一小起一落就一停一跳（本机修，2026-11-12）。
+    internal bool AppPlaying(string whitelist, bool keep = false)
     {
         if (string.IsNullOrWhiteSpace(whitelist)) return false;
         lock (gate)
@@ -96,7 +97,7 @@ internal sealed class Music : IDisposable
                 if (name.Length == 0) continue;
                 if (apps.TryGetValue(name, out var level) && level > mine) mine = level;
             }
-            return mine >= .03 && mine >= top * .5;
+            return mine >= (keep ? .015 : .03) && mine >= top * (keep ? .28 : .5);
         }
     }
 

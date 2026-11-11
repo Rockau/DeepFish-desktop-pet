@@ -145,6 +145,7 @@ public static class WhaleEar
                             if (level < 0.004) continue;
                             uint pid = session.GetProcessID;
                             if (pid == 0) continue;
+                            if (pid == (uint)Process.GetCurrentProcess().Id) continue; // 采集器自己在声卡上的会话，不能算成放音乐的软件（本机修，2026-11-12）
                             string name = Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant();
                             double before;
                             if (!found.TryGetValue(name, out before) || level > before) found[name] = level;

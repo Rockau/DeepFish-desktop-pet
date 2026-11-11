@@ -461,6 +461,7 @@ internal sealed partial class PetWindow : Window
         if (hiding) { hiding = false; image.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200))); }
         if (!standby) return false;
         standby = false;
+        StartMusic(); // 出来了才开始听歌（收着的时候不白开采集进程）。要在 standby 落下之后：StartMusic 自己会看 standby
         nextFullscreenLook = default;
         if (player is { } current) UpdateFullscreen(current);
         if (ready) image.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300)));
@@ -486,6 +487,7 @@ internal sealed partial class PetWindow : Window
         hiding = false; standby = true;
         nextFullscreenLook = default;
         mutterSpeech.Stop();
+        StopMusic(); // 收进待命就别再听了，省一个常驻的采集进程
     }
 
     // 演示全部待机小动作（临时给用户看）。
@@ -810,7 +812,9 @@ internal sealed partial class PetWindow : Window
         if (hiddenForFullscreen) return;
         KeepTopmost();
         // Moving the window pushes her body; physics carries that into her hair, skirt and tail.
-        double swayX = (Left - lastLeft) * 30, swayY = (Top - lastTop) * 30;
+        // 拖动时按抓点压低这个整体平移：抓点那一头才贴在手上（用户 2026-11-12）
+        double swayScale = dragging ? GrabbedSway : 1;
+        double swayX = (Left - lastLeft) * 30 * swayScale, swayY = (Top - lastTop) * 30 * swayScale;
         lastLeft = Left; lastTop = Top;
         if (swayX != 0 || swayY != 0) current.Send(FormattableString.Invariant($"sway {swayX:0} {swayY:0}"));
         UpdateCut();
@@ -1042,6 +1046,7 @@ internal sealed partial class PetWindow : Window
 
     private void Dropped()
     {
+        TouchDragEnded();
         Clamp();
         SavePlace();
         BondSeen();
@@ -1332,6 +1337,10 @@ internal sealed partial class PetWindow : Window
                 return Tools.Text(new { wearing = Wearing() });
             case "get_state":
                 return Tools.Text(State());
+            // 托盘底部的「检查更新」按钮走这里（用户 2026-11-12 要的）：不进 MCP 工具表，只给本机控制台用。
+            case "check_update":
+                var checkedNow = await updates.Check();
+                return Tools.Text(new { state = checkedNow.State, behind = checkedNow.Behind, changes = checkedNow.Changes, error = checkedNow.Error });
             case "update_settings":
                 if (args.TryGetProperty("fps", out var fps) && fps.TryGetInt32(out var rate))
                 {
@@ -1373,6 +1382,18 @@ internal sealed partial class PetWindow : Window
                 if (args.TryGetProperty("coax_sleep", out var sleep) && sleep.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.CoaxSleep = sleep.GetBoolean();
                 if (args.TryGetProperty("coax_lunch", out var lunch) && lunch.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.CoaxLunch = lunch.GetBoolean();
                 if (args.TryGetProperty("idle_seconds", out var idle) && idle.TryGetInt32(out var seconds)) settings.IdleSeconds = Math.Clamp(seconds, 15, 600);
+                // 跟着音乐跳：这两个原本只在工具说明里写着、这里没接，改了不生效（本机修，2026-11-12）
+                if (args.TryGetProperty("music_dance", out var dance) && dance.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    bool on = dance.GetBoolean();
+                    if (on != settings.MusicDance)
+                    {
+                        settings.MusicDance = on;
+                        if (on) StartMusic(); else StopMusic();
+                    }
+                }
+                if (args.TryGetProperty("music_apps", out var apps) && apps.ValueKind == JsonValueKind.String)
+                    settings.MusicApps = (apps.GetString() ?? "").Trim();
                 bool texChanged = false;
                 if (args.TryGetProperty("tex_scale", out var texScale) && texScale.TryGetDouble(out var tex))
                 {
@@ -1547,7 +1568,7 @@ internal sealed partial class PetWindow : Window
     {
         shape = settings.Shape, shapeLabel = Shape.Label, wearing = Wearing(), fps = settings.Fps, scale = settings.Scale, tex_scale = settings.TexScale, bubble_scale = settings.BubbleScale, bubble_seconds = settings.BubbleSeconds,
         hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, start_hidden = settings.StartHidden, keep_on_screen = settings.KeepOnScreen, follow_mouse = settings.FollowMouse,
-        check_updates = settings.CheckUpdates, coax_sleep = settings.CoaxSleep, coax_lunch = settings.CoaxLunch, birthday = settings.Birthday,
+        check_updates = settings.CheckUpdates, music_dance = settings.MusicDance, coax_sleep = settings.CoaxSleep, coax_lunch = settings.CoaxLunch, birthday = settings.Birthday,
         update = updates.Latest is { } found ? new { current = found.Current, latest = found.Latest, behind = found.Behind, changes = found.Changes, guide = found.Guide } : null,
         idle_seconds = settings.IdleSeconds, position = new { Left, Top }, saying = speech.IsSaying, reaction = behavior.Showing, trouble,
         clothes = Outfit.Clothes.Select(item => item.Label).ToArray(), accessories = Outfit.Accessories.Select(item => item.Label).ToArray(),
@@ -1589,6 +1610,3 @@ internal sealed partial class PetWindow : Window
     [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint period);
     [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint period);
 }
-
-
-
