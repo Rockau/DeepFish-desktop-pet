@@ -14,15 +14,7 @@
 ## 演示
 
 <p align="center">
-  <img src="docs/demo/talking.gif" width="420" alt="大肥鱼在桌面上说话、做表情">
-</p>
-
-<p align="center">
   <img src="docs/demo/desktop.png" width="760" alt="桌面上的大肥鱼">
-</p>
-
-<p align="center">
-  <img src="docs/demo/expressions.png" width="760" alt="表情示例">
 </p>
 
 > 图里的语气、表情、气泡和动作都是 Agent 在回复里用〔〕写出来的，不是预录的动画。
