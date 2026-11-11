@@ -122,8 +122,8 @@ internal sealed partial class PetWindow
     private Point strokeLast;
     private Vector strokeVel;
     private double strokeTravel, strokeMoving, strokeMaxTime, strokeHeadTime;
-    // 30 秒彩蛋（本机加，2026-11-11）：单独一条更宽容的计时（停手只退 0.1/秒、速度门槛 25），
-    // 和 3/8 秒用的 strokeHeadTime 分开，旧的手感一点不动。melted 满 30 秒后锁存到松手。
+    // 20 秒彩蛋（本机加，2026-11-11）：单独一条更宽容的计时（停手只退 0.1/秒、速度门槛 25），
+    // 和 3/8 秒用的 strokeHeadTime 分开，旧的手感一点不动。melted 满 20 秒后锁存到松手。
     private double strokeDeepTime;
     private bool melted;
     private DateTime lastStrokeGain = DateTime.MinValue;
@@ -178,7 +178,7 @@ internal sealed partial class PetWindow
         EndStroke();
     }
 
-    // 松手后的反应：摸了多久分三档（3 秒、8 秒），30 秒是彩蛋「摸后融化」。脸都会红一下。
+    // 松手后的反应：摸了多久分三档（3 秒、8 秒），20 秒是彩蛋「摸后融化」。脸都会红一下。
     private (string Mood, string Key)? afterStroke;
     private DateTime afterStrokeAt;
     private bool afterStrokeBond, afterStrokeMelt;
@@ -250,7 +250,7 @@ internal sealed partial class PetWindow
     }
 
     // 脸：side 是手靠近头的哪一侧（屏幕上的），face 为 true 表示手在脸上；t 是摸了多久（秒）。
-    // melt 是 27–30 秒的融化渐变（0→1）：笑眼慢慢合上变成眯眼笑、身体前倾（本机加，2026-11-11）。
+    // melt 是 17–20 秒的融化渐变（0→1）：笑眼慢慢合上变成眯眼笑、身体前倾（本机加，2026-11-11）。
     // 单闭哪只眼：ParamEyeLOpen 是模型的左眼，在屏幕的右边，所以手在屏幕右侧就闭它。
     private static (Dictionary<string, double> Sets, string[] Exps) StrokeFace(int side, bool face, double t, double melt)
     {
@@ -284,13 +284,13 @@ internal sealed partial class PetWindow
         if (!onHead) strokeHeadTime = Math.Max(0, strokeHeadTime - dt); // 手离开了头，害羞的程度也退下去
         strokeMaxTime = Math.Max(strokeMaxTime, strokeHeadTime);
 
-        // 30 秒彩蛋：单独一条更宽容的计时（速度 25 就算、停手只退 0.1/秒），和上面的旧计时互不影响。
+        // 20 秒彩蛋：单独一条更宽容的计时（速度 25 就算、停手只退 0.1/秒），和上面的旧计时互不影响。
         bool deepMoving = engaged && onHead && speed > 25;
         if (deepMoving) strokeDeepTime += dt;
         else if (onHead) strokeDeepTime = Math.Max(0, strokeDeepTime - dt * .1);
         else strokeDeepTime = Math.Max(0, strokeDeepTime - dt);
-        if (!melted && strokeDeepTime >= 30) melted = true;
-        double melt = melted ? 1 : Math.Clamp((strokeDeepTime - 27) / 3, 0, 1);
+        if (!melted && strokeDeepTime >= 20) melted = true;
+        double melt = melted ? 1 : Math.Clamp((strokeDeepTime - 17) / 3, 0, 1);
         melt = Math.Round(melt * 30) / 30; // 每帧只发有变化的几个值，30 档够平滑
 
         var box = Behavior.HeadBox(Shape.Id);

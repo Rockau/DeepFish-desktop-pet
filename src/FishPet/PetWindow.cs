@@ -40,6 +40,9 @@ internal sealed partial class PetWindow : Window
     private readonly Random random = new();
     private readonly Dictionary<string, string> textCues = []; // 固定嘀咕文本 → 表情动作
     private readonly Dictionary<string, List<(string Text, int Level)>> touchLines = []; // 触碰反应的台词：反应名 → (台词, 至少要几级亲密度)
+    // 摸头彩蛋的五句用抽签袋：一轮五句各一次，跨轮也尽量不连着同一句（本机加，2026-11-11）
+    private readonly List<string> meltBag = [];
+    private string? lastMeltLine;
     private readonly Updates updates;
     private readonly DispatcherTimer timer;
     // Out of the way while another program fills the screen (settings: hide_on_fullscreen), looked at twice a second.
@@ -953,16 +956,47 @@ internal sealed partial class PetWindow : Window
         var lines = all.Where(line => line.Level <= affection.Level).ToArray();
         if (lines.Length == 0) return;
         int token = mutterToken; // 有新的触碰台词、或她开口了，就别让旧的一句乱收气泡
-        // 级别要求越高的句子权重越大：到了高等级，多半说黏人的那些
-        int pick = random.Next(lines.Sum(line => 1 + 2 * line.Level));
-        var said = lines[^1].Text;
-        foreach (var line in lines) { pick -= 1 + 2 * line.Level; if (pick < 0) { said = line.Text; break; } }
+        // 摸头彩蛋的五句：抽完一轮再重抽，尽量不连续重复（用户定的，2026-11-11）
+        string said;
+        if (reaction == "抚摸头4")
+            said = NextMeltLine(lines.Select(line => line.Text).ToArray());
+        else
+        {
+            // 级别要求越高的句子权重越大：到了高等级，多半说黏人的那些
+            int pick = random.Next(lines.Sum(line => 1 + 2 * line.Level));
+            said = lines[^1].Text;
+            foreach (var line in lines) { pick -= 1 + 2 * line.Level; if (pick < 0) { said = line.Text; break; } }
+        }
         var voiceSeconds = Speak(said);
         mutterSpeech.Say(new Line(said, body.Apply));
         var wait = Math.Max(Math.Clamp(said.Length * 250 + 1200, 2500, 6000) / 1000.0, (voiceSeconds ?? 0) + 0.4);
         await Task.Delay(TimeSpan.FromSeconds(wait));
         if (token != mutterToken || speech.IsSaying) return;
         mutterSpeech.Stop();
+    }
+
+    // 摸头彩蛋五句的抽签袋：五句一轮，每句各出一次；新一轮尽量避免第一句和上一轮最后一句相同。
+    private string NextMeltLine(string[] texts)
+    {
+        meltBag.RemoveAll(text => !texts.Contains(text));
+        if (meltBag.Count == 0)
+        {
+            meltBag.AddRange(texts);
+            for (int i = meltBag.Count - 1; i > 0; i--) // Fisher-Yates
+            {
+                int j = random.Next(i + 1);
+                (meltBag[i], meltBag[j]) = (meltBag[j], meltBag[i]);
+            }
+            if (meltBag.Count > 1 && meltBag[0] == lastMeltLine)
+            {
+                int j = 1 + random.Next(meltBag.Count - 1);
+                (meltBag[0], meltBag[j]) = (meltBag[j], meltBag[0]);
+            }
+        }
+        var said = meltBag[0];
+        meltBag.RemoveAt(0);
+        lastMeltLine = said;
+        return said;
     }
 
     private void Dropped()

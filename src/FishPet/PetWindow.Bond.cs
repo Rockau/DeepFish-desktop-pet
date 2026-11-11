@@ -34,7 +34,7 @@ internal sealed partial class PetWindow
         affection.Save(AffectionFile);
     }
 
-    // 摸头彩蛋（30 秒）：「融化」一天一次 +3；当天用过了就退回普通摸头 +1（还是 60 秒一次）。
+    // 摸头彩蛋（20 秒）：「融化」一天一次 +3；当天用过了就退回普通摸头 +1（还是 60 秒一次）。
     private void BondMelt()
     {
         if (test) return;
