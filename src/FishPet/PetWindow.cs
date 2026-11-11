@@ -868,7 +868,7 @@ internal sealed partial class PetWindow : Window
     // She comes and goes with the agent (the owner, 2026-11-03: the agent closed, she was still there). Once an agent
     // has been connected, she bows out after a while with none, long enough for one that reconnects or restarts its
     // servers. A program on the HTTP interface keeps her while it uses her; started by hand with no agent, she stays.
-    private static readonly TimeSpan AloneFor = TimeSpan.FromSeconds(5), HttpUse = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan AloneFor = TimeSpan.FromMinutes(1), HttpUse = TimeSpan.FromSeconds(15);
     private bool hadAgent;
     private int agentsBefore;
     private DateTime? aloneSince;
@@ -877,9 +877,15 @@ internal sealed partial class PetWindow : Window
     private void GoWithAgent()
     {
         if (test || exiting) return;
-        // 本机改（2026-11-11）：DSH 每次工具调用可能重开一次 MCP，桥接一断她就退场，托盘小图标也跟着消失。
-        // 改成一直留着，只有用户说 quit / 托盘“退出控制台”才走。
-        if ((server?.Connections ?? 0) > 0) hadAgent = true;
+        // 本机改（2026-11-11）：DSH 每次工具调用可能重开一次 MCP，桥接一断就退场的话托盘小图标也会跟着消失。
+        // 留一分钟缓冲：真的把 Agent 关了才会走，只是重连或者闲一会儿不算。还有程序在用网页接口时也留着。
+        if ((server?.Connections ?? 0) > 0) { hadAgent = true; aloneSince = null; return; }
+        if (!hadAgent) return; // 手动打开、没接过 Agent 的，一直留着
+        if (DateTime.UtcNow - lastHttp < HttpUse) { aloneSince = null; return; }
+        aloneSince ??= DateTime.UtcNow;
+        if (DateTime.UtcNow - aloneSince < AloneFor) return;
+        Places.Log("接她的 Agent 都断开一分钟了，她先退下");
+        Close();
     }
 
     // While another program fills the screen she is hidden and her renderer draws nothing; her words still play on,

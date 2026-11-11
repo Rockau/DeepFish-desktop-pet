@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -9,7 +9,7 @@ using System.Windows.Threading;
 namespace FishTray;
 
 // 任务栏右下角的大肥鱼图标：左键开调控面板，右键菜单（出场/收起、打开面板、退出控制台）。
-// 跟着桌宠走：桌宠一起来它就在，桌宠退场（Claude 断开约 15 秒后）它也退。
+// 跟着桌宠走：桌宠一起来它就在，桌宠退场（Agent 断开约 1 分钟后）它也退。
 public partial class App : System.Windows.Application
 {
     private const string SingleName = "FishTray.Single.7c1f";
