@@ -11,6 +11,22 @@
 > **授权 / License：** 本仓库代码采用 **PolyForm Noncommercial 1.0.0**：个人、学习、研究、公益免费；可以修改、发布，但不能商用。商用需单独授权。模型和 Live2D SDK 不包含在本仓库，分别遵循原作者和 Live2D 的许可。
 
 
+## 演示
+
+<p align="center">
+  <img src="docs/demo/talking.gif" width="420" alt="大肥鱼在桌面上说话、做表情">
+</p>
+
+<p align="center">
+  <img src="docs/demo/desktop.png" width="760" alt="桌面上的大肥鱼">
+</p>
+
+<p align="center">
+  <img src="docs/demo/expressions.png" width="760" alt="表情示例">
+</p>
+
+> 图里的语气、表情、气泡和动作都是 Agent 在回复里用〔〕写出来的，不是预录的动画。
+
 ## 她能做什么
 
 ### 身体（原作就有的，又调了一些）
