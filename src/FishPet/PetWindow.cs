@@ -278,6 +278,7 @@ internal sealed partial class PetWindow : Window
         image.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300)));
         behavior.Show("问候", DateTime.UtcNow);
         body.Apply("抚胸");
+        WelcomeSoon(); // 全新安装的第一次出场，接着说几句欢迎（只说这一次）
     }
 
     private void ApplySize()
@@ -483,6 +484,7 @@ internal sealed partial class PetWindow : Window
         if (player is { } current) UpdateFullscreen(current);
         if (ready) image.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300)));
         if (greet) { behavior.Show("问候", DateTime.UtcNow); body.Apply("抚胸"); }
+        WelcomeSoon(); // 本来收着（start_hidden）的全新安装，第一次被叫出来时说欢迎
         return true;
     }
 

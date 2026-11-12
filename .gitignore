@@ -20,7 +20,7 @@ api.json
 *.old
 *.tmp
 
-# 每个人自己的大肥鱼：亲密度、记忆小本本（都只存在本机，绝不上传）
+# 每个人自己的大肥鱼：羁绊、记忆小本本（都只存在本机，绝不上传）
 affection.json
 memory.json
 memory-archive.json

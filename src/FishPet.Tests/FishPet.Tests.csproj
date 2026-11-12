@@ -21,5 +21,6 @@
     <Compile Include="../FishPet/Memory.cs" Link="Memory.cs" />
     <Compile Include="../FishPet/MemoryView.cs" Link="MemoryView.cs" />
     <Compile Include="../FishPet/Alarms.cs" Link="Alarms.cs" />
+    <Compile Include="../FishPet/Welcome.cs" Link="Welcome.cs" />
   </ItemGroup>
 </Project>

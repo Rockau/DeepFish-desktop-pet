@@ -12,6 +12,7 @@ VerifyBond();
 VerifyMemory();
 VerifyMemoryView();
 VerifyAlarms();
+VerifyWelcome();
 VerifyDance();
 VerifyBeatTracker();
 Console.WriteLine($"FishPet: {checks} checks passed.");
@@ -837,6 +838,39 @@ void VerifyAlarms()
     var words = text.Where(pair => pair.Key != "哄睡4").SelectMany(pair => pair.Value).Concat(Alarms.Fallback.Values)
         .SelectMany(line => System.Text.RegularExpressions.Regex.Matches(line, "〔([^〕]*)〕").Select(match => match.Groups[1].Value)).ToList();
     Check(words.Count > 0, "alarm lines carry actions");
+}
+
+// 第一次出场的欢迎（2026-11-13）：台词从 welcome.txt 取，缺了有内置的；每个动作词她都做得出来；老用户不补说。
+void VerifyWelcome()
+{
+    var root = AppContext.BaseDirectory;
+    while (root != null && !File.Exists(Path.Combine(root, "welcome.txt"))) root = Path.GetDirectoryName(root);
+    Check(root != null, "welcome.txt is found");
+    var shipped = Welcome.Text(File.ReadAllLines(Path.Combine(root!, "welcome.txt")));
+    Check(Welcome.Bubbles(shipped).Length is >= 3 and <= 6, "the welcome is a few bubbles, not a speech");
+    Check(Welcome.Bubbles(Welcome.Fallback).Length is >= 3 and <= 6, "the built-in welcome is a few bubbles too");
+
+    // 文件缺了、没有「# 欢迎」、或者那一段是空的，都退回内置的
+    Check(Welcome.Text(null) == Welcome.Fallback, "no file: the built-in welcome");
+    Check(Welcome.Text(["// 只有注释", "# 别的段", "一句话"]) == Welcome.Fallback, "no welcome section: the built-in welcome");
+    Check(Welcome.Text(["# 欢迎", "／／", "第二条／带气泡"]) == "第二条／带气泡", "an empty line is skipped, the first real one is used");
+    Check(Welcome.Text(["# 欢迎", "甲／乙", "丙"]) == "甲／乙", "only the first line of the section is used");
+
+    // 每个动作词她的身体都做得出来（用的是同一套 Body），而且托盘、气泡、收起这几件事都交代到了
+    foreach (var text in new[] { shipped, Welcome.Fallback })
+    {
+        var acting = new List<string>();
+        var body = new Body(acting.Add);
+        foreach (var bubble in Welcome.Bubbles(text))
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(bubble, "〔([^〕]*)〕"))
+                body.Apply(match.Groups[1].Value);
+        Check(body.Unknown.Count == 0, "every action word in the welcome is one her body can do" + (body.Unknown.Count > 0 ? "（" + string.Join("、", body.Unknown) + "）" : ""));
+    }
+    Check(shipped.Contains("小鲸鱼") && shipped.Contains("收起来") && shipped.Contains("不上传"), "the welcome tells where the tray icon is, how to hide her, and that nothing is uploaded");
+
+    // 新装 / 老用户：没有设置文件才要欢迎；有设置文件（哪怕是读坏的）都不补说
+    Check(Welcome.Pending(settingsFileExisted: false), "no settings.json: a fresh install, she welcomes");
+    Check(!Welcome.Pending(settingsFileExisted: true), "an existing settings.json: an old user, no welcome");
 }
 
 // 跟着音乐跳（本机加，2026-11-10）：BPM 决定一拍多长，舞步跟着变快变慢。

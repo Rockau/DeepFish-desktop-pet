@@ -66,15 +66,15 @@ internal static class Tools
             "scale 大小 0.5–2；bubble_scale 气泡大小 0.5–2（字和气泡一起缩放，跟 scale 无关）；bubble_seconds 说完后气泡停多久：0 按字数自动（5–20 秒，默认），" +
             "5–180 固定秒数，-1 一直留着到下一句或被点掉；" +
             "hide_on_fullscreen 别的程序全屏（游戏、视频）时藏起来、不画，默认开；" +
-            "follow_mouse 视线跟着鼠标；start_hidden 启动时先收起待命（用户叫才出场）；keep_on_screen 拖到屏幕边会弹回来（默认开），关掉就能拖出屏幕外；idle_seconds 没人理你时多久做一个小动作（15–600 秒）；check_updates 启动时和每 12 小时去 GitHub 看有没有新版本，默认开；coax_sleep 每晚 00:30 起自己出来哄睡（四层），coax_lunch 每天 11:30 提醒吃午饭，都按这台电脑的时钟、默认开；birthday 用户的生日（10-21 这样，那天你会说生日快乐；空字符串清掉）；" +
-            "tex_scale 立绘清晰度：1 高清（默认，4096 原图）、0.5 标准、0.25 流畅（省显存），改档位立绘会重新加载几秒；" +
+            "follow_mouse 视线跟着鼠标；start_hidden 启动时先收起待命（用户叫才出场）；keep_on_screen 拖到屏幕边会弹回来（默认关，开了就拖不出屏幕）；idle_seconds 没人理你时多久做一个小动作（15–600 秒）；check_updates 启动时和每 12 小时去 GitHub 看有没有新版本，默认关；coax_sleep 每晚 00:30 起自己出来哄睡（四层），coax_lunch 每天 11:30 提醒吃午饭，都按这台电脑的时钟、默认关；birthday 用户的生日（10-21 这样，那天你会说生日快乐；空字符串清掉）；" +
+            "tex_scale 立绘清晰度：1 高清（4096 原图）、0.5 标准（默认，2048）、0.25 流畅（1024，省显存），改档位立绘会重新加载几秒；" +
             "music_dance 听到电脑在放音乐就跟着跳（默认开）：只认有拍子的声音，说话、播客不会让她乱蹦；music_apps 白名单（进程名，逗号分隔），只有这些音乐软件在出声才跳。",
             """{"shape":{"type":"string","enum":["small","chibi","full"]},"fps":{"type":"integer","enum":[30,60,90,120]},"scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_seconds":{"type":"integer","minimum":-1,"maximum":180},"hide_on_fullscreen":{"type":"boolean"},"follow_mouse":{"type":"boolean"},"start_hidden":{"type":"boolean"},"keep_on_screen":{"type":"boolean"},"idle_seconds":{"type":"integer","minimum":15,"maximum":600},"check_updates":{"type":"boolean"},"coax_sleep":{"type":"boolean"},"coax_lunch":{"type":"boolean"},"birthday":{"type":"string"},"tex_scale":{"type":"number","enum":[0.25,0.5,1]},"music_dance":{"type":"boolean"},"music_apps":{"type":"string"}}""", []),
         Tool("coax", "哄睡演示：把桌宠窗口摆到屏幕正中（配合放大和表情，快速看各层递进的动作效果）。stage：1 第一层（温柔关心）、2 第二层（严肃）、3 第三层（生气「时间到了」）、4 第四层（黑脸质问）、0 回到原来的位置。第四层演示用固定的一句质问（一个字一个字慢慢说）。5 演示全部待机小动作；6 演示一个待机小剧场（text 给小剧场名，不给就随机，不用调 say）。",
             """{"stage":{"type":"integer","minimum":0,"maximum":6},"text":{"type":"string"}}""", ["stage"]),
         Tool("recent_events", "用户最近怎么碰了你：点了哪里（zone：head 头、face 脸、hand 手、skirt 裙子、tail 尾巴、body 身上）、你的反应（reaction）、拖动和放下。" +
             "after 可选：只要这个序号之后的。反应身体自己会做，这里只是让你知道，要不要接一句话由你决定。", """{"after":{"type":"integer","minimum":0}}""", []),
-        Tool("show", "出场：用户叫你出来时用。你本来收着（启动时默认收着，get_state 里 hidden 为 true）就会现身并打个招呼；已经在就什么也不变。出场以后才用 say 在桌面上说话。", "{}"),
+        Tool("show", "出场：用户叫你出来时用。你本来收着（用户打开了 start_hidden 的话启动后就是收着的；get_state 里 hidden 为 true）就会现身并打个招呼；已经在就什么也不变。出场以后才用 say 在桌面上说话。", "{}"),
         Tool("hide", "收起：用户让你先退下、但不关掉时用。会等话说完、鞠躬、淡出，桌宠程序和接口都还开着，只是不露面（待机表演也停了）；之后只在聊天窗口说话，用户再叫你就 show。想彻底关掉才用 quit。", "{}"),
         Tool("quit", "鞠躬告别，然后收起你的身体（关掉桌宠）。用户让你收起来时用；收起后只在聊天窗口说话，下次用任何工具时会自动再出来。", "{}"),
     ];

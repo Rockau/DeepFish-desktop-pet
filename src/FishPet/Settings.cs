@@ -46,6 +46,9 @@ internal sealed class Settings
     public string LlmBaseUrl { get; set; } = "https://api.deepseek.com";
     public string LlmModel { get; set; } = "deepseek-chat";
     public double MutterChance { get; set; } = 0.5;
+    // 第一次真正出场的欢迎说过没有（Welcome.cs、welcome.txt）。默认 true：已经有 settings.json 的老用户不补说；
+    // 只有全新安装（没有 settings.json）才在 Load 里设成 false。
+    public bool Welcomed { get; set; } = true;
     public double? Left { get; set; }
     public double? Top { get; set; }
 
@@ -60,7 +63,8 @@ internal sealed class Settings
                 return loaded.Checked();
         }
         catch (Exception error) { Places.Log("设置读不出来，用默认的：" + error.Message); }
-        return new Settings();
+        // 没有设置文件：全新安装（或读坏了，读坏的走上面的 catch，不算新装）。新装的第一次出场要说欢迎
+        return new Settings { Welcomed = !Welcome.Pending(File.Exists(Places.SettingsFile)) };
     }
 
     internal Settings Checked()
