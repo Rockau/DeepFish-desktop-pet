@@ -964,13 +964,62 @@ internal sealed partial class PetWindow : Window
         if (DateTime.UtcNow < nextTopmostLook) return;
         nextTopmostLook = DateTime.UtcNow.AddSeconds(1);
         var handle = new WindowInteropHelper(this).Handle;
-        if (handle == 0 || ((long)GetWindowLongPtr(handle, -20) & 0x8) != 0) return;
+        if (handle == 0) return;
+        if (((long)GetWindowLongPtr(handle, -20) & 0x8) != 0)
+        {
+            // 置顶标记还在，但置顶层里也分先后：别的“总在最前”的程序被点到，就会盖在她上面（本机加，2026-11-13）。
+            if (DateTime.UtcNow < nextCoverRaise) return;
+            var cover = CoveredBy(handle);
+            if (cover == null) return;
+            nextCoverRaise = DateTime.UtcNow.AddSeconds(3); // 对方要是也爱抢最前，别跟它抢得太勤
+            RaiseAboveAll(handle);
+            if (DateTime.UtcNow - topmostLostLogged > TimeSpan.FromMinutes(1))
+            {
+                topmostLostLogged = DateTime.UtcNow;
+                Places.Log("她被别的置顶窗口盖住了，已经抬回最前面；压在上面的是 " + cover);
+            }
+            return;
+        }
         RaiseAboveAll(handle);
         if (DateTime.UtcNow - topmostLostLogged > TimeSpan.FromMinutes(1))
         {
             topmostLostLogged = DateTime.UtcNow;
             Places.Log("窗口的置顶被去掉了（别的程序或系统），已经重新置顶" + Above(handle));
         }
+    }
+
+    private DateTime nextCoverRaise;
+
+    // 置顶层里压在她上面、又和她的窗口重叠的，是哪个程序（没有就返回 null）。
+    // 她自己的气泡和手、任务栏/开始菜单这些系统外壳、被隐藏（cloaked）的和最小化的不算。
+    private static readonly HashSet<string> ShellProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "explorer", "ShellExperienceHost", "StartMenuExperienceHost", "SearchHost", "SearchApp", "TextInputHost", "LockApp",
+    };
+
+    private static string? CoveredBy(nint handle)
+    {
+        if (!GetWindowRect(handle, out var mine)) return null;
+        uint self = (uint)Environment.ProcessId;
+        var above = handle;
+        for (int step = 0; step < 300 && (above = GetWindow(above, 3)) != 0; step++) // GW_HWNDPREV
+        {
+            if (!IsWindowVisible(above) || IsIconic(above)) continue;
+            if (!GetWindowRect(above, out var other)) continue;
+            int width = Math.Min(mine.Right, other.Right) - Math.Max(mine.Left, other.Left);
+            int height = Math.Min(mine.Bottom, other.Bottom) - Math.Max(mine.Top, other.Top);
+            if (width < 24 || height < 24) continue;
+            if (DwmGetWindowAttribute(above, 14, out int cloaked, sizeof(int)) == 0 && cloaked != 0) continue; // DWMWA_CLOAKED
+            GetWindowThreadProcessId(above, out uint id);
+            if (id == self) continue;
+            try
+            {
+                var name = Process.GetProcessById((int)id).ProcessName;
+                if (!ShellProcesses.Contains(name)) return name;
+            }
+            catch { /* 程序刚好退了：下一秒再看 */ }
+        }
+        return null;
     }
 
     // 丢置顶的时候，压在她上面的是哪个程序（只写日志，好查出是谁撤的）。
@@ -1655,6 +1704,11 @@ internal sealed partial class PetWindow : Window
     private static readonly nint HwndTopmost = -1;
     private const uint SwpNoMove = 0x0001, SwpNoSize = 0x0002, SwpNoActivate = 0x0010, SwpNoOwnerZOrder = 0x0200;
     [DllImport("user32.dll")] private static extern nint GetWindow(nint hwnd, uint command);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool IsIconic(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(nint hwnd, out CoverRect rect);
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint hwnd, int attribute, out int value, int size);
+    [StructLayout(LayoutKind.Sequential)] private struct CoverRect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint hwnd, out uint process);
     // 摸头的手要更高帧（本机加，2026-11-11）：把计时精度提到 1ms，关闭时恢复
     [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint period);
