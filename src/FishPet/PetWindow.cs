@@ -946,8 +946,11 @@ internal sealed partial class PetWindow : Window
     // unseen, and she is back on top once it is gone. Not in a test, which is out of sight anyway.
     private void UpdateFullscreen(Player current)
     {
-        bool covered = standby || (settings.HideOnFullscreen && !test && Fullscreen.InFront());
+        string who = "";
+        bool overlay = !standby && !test && Fullscreen.OverlayInFront(out who); // 截图/录屏浮层：不管开关，她都让开
+        bool covered = standby || overlay || (settings.HideOnFullscreen && !test && Fullscreen.InFront());
         if (covered == hiddenForFullscreen) return;
+        if (covered && overlay) Places.Log("有铺满全屏的截图/录屏类浮层在最前（" + who + "），她先让开");
         hiddenForFullscreen = covered;
         current.Send($"pause {(covered ? 1 : 0)}");
         bubble.Quiet = covered || test;
@@ -1009,13 +1012,15 @@ internal sealed partial class PetWindow : Window
             int width = Math.Min(mine.Right, other.Right) - Math.Max(mine.Left, other.Left);
             int height = Math.Min(mine.Bottom, other.Bottom) - Math.Max(mine.Top, other.Top);
             if (width < 24 || height < 24) continue;
+            // 只管“正经的程序窗口”：不进任务栏的浮层（截图框、录制条、各种弹出面板）和铺满整屏的浮层，她不去盖，也不抢着压过去
+            if (Fullscreen.IsToolWindow(above) || Fullscreen.FillsMonitor(above)) continue;
             if (DwmGetWindowAttribute(above, 14, out int cloaked, sizeof(int)) == 0 && cloaked != 0) continue; // DWMWA_CLOAKED
             GetWindowThreadProcessId(above, out uint id);
             if (id == self) continue;
             try
             {
                 var name = Process.GetProcessById((int)id).ProcessName;
-                if (!ShellProcesses.Contains(name)) return name;
+                if (!ShellProcesses.Contains(name) && !Fullscreen.IsCaptureTool(name)) return name;
             }
             catch { /* 程序刚好退了：下一秒再看 */ }
         }
@@ -1038,7 +1043,9 @@ internal sealed partial class PetWindow : Window
     {
         if (test || standby || !IsVisible || exiting) return;
         var handle = new WindowInteropHelper(this).Handle;
-        if (handle != 0) RaiseAboveAll(handle);
+        // 本机改（2026-11-13）：只有被“正经的程序窗口”压着才抬。托盘的隐藏图标面板、开始菜单、截图录屏的浮层
+        // 都不算——点她一下就盖到它们上面，会把用户正在用的面板挡住。
+        if (handle != 0 && CoveredBy(handle) != null) RaiseAboveAll(handle);
     }
 
     private static void RaiseAboveAll(nint handle) =>
