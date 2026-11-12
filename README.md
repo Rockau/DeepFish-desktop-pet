@@ -91,9 +91,18 @@
 | **陪你干活** | 开工、出错、测试通过、做完，她都会在旁边反应，不花 token（可选） |
 | **托盘控制台** | 任务栏的小鲸鱼图标，点开调大小、体型、换衣服，点表情和小剧场看效果 |
 
-<p align="center">
-  <img src="docs/demo/tray.png" width="260" alt="托盘控制台">
-</p>
+<table align="center">
+  <tr>
+    <td align="center" valign="top">
+      <img src="docs/demo/tray.png" width="260" alt="托盘控制台"><br>
+      <sub>控制台：羁绊、专注、大小、体型、换装</sub>
+    </td>
+    <td align="center" valign="top">
+      <img src="docs/demo/tray-settings.png" width="260" alt="更多设置"><br>
+      <sub>更多设置：帧率、清晰度、气泡、各种开关</sub>
+    </td>
+  </tr>
+</table>
 
 还有换装、Q 版、小剧场、好几个名字……留给你自己去发现。完整说明见 [功能详解](docs/功能详解.md)。
 
