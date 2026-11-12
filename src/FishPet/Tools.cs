@@ -70,7 +70,7 @@ internal static class Tools
             "tex_scale 立绘清晰度：1 高清（默认，4096 原图）、0.5 标准、0.25 流畅（省显存），改档位立绘会重新加载几秒；" +
             "music_dance 听到电脑在放音乐就跟着跳（默认开）：只认有拍子的声音，说话、播客不会让她乱蹦；music_apps 白名单（进程名，逗号分隔），只有这些音乐软件在出声才跳。",
             """{"shape":{"type":"string","enum":["small","chibi","full"]},"fps":{"type":"integer","enum":[30,60,90,120]},"scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_seconds":{"type":"integer","minimum":-1,"maximum":180},"hide_on_fullscreen":{"type":"boolean"},"follow_mouse":{"type":"boolean"},"start_hidden":{"type":"boolean"},"keep_on_screen":{"type":"boolean"},"idle_seconds":{"type":"integer","minimum":15,"maximum":600},"check_updates":{"type":"boolean"},"coax_sleep":{"type":"boolean"},"coax_lunch":{"type":"boolean"},"birthday":{"type":"string"},"tex_scale":{"type":"number","enum":[0.25,0.5,1]},"music_dance":{"type":"boolean"},"music_apps":{"type":"string"}}""", []),
-        Tool("coax", "哄睡演示：把桌宠窗口摆到屏幕正中（配合放大和表情，快速看各层递进的动作效果）。stage：1 第一层（温柔关心）、2 第二层（严肃）、3 第三层（生气「时间到了」）、4 第四层（黑脸质问）、0 回到原来的位置。text 可选：第四层的质问台词，由 AI 实时生成传入（一个字一个字慢慢说）。5 演示全部待机小动作；6 演示一个待机小剧场（text 给小剧场名，不给就随机，不用调 say）。",
+        Tool("coax", "哄睡演示：把桌宠窗口摆到屏幕正中（配合放大和表情，快速看各层递进的动作效果）。stage：1 第一层（温柔关心）、2 第二层（严肃）、3 第三层（生气「时间到了」）、4 第四层（黑脸质问）、0 回到原来的位置。第四层演示用固定的一句质问（一个字一个字慢慢说）。5 演示全部待机小动作；6 演示一个待机小剧场（text 给小剧场名，不给就随机，不用调 say）。",
             """{"stage":{"type":"integer","minimum":0,"maximum":6},"text":{"type":"string"}}""", ["stage"]),
         Tool("recent_events", "用户最近怎么碰了你：点了哪里（zone：head 头、face 脸、hand 手、skirt 裙子、tail 尾巴、body 身上）、你的反应（reaction）、拖动和放下。" +
             "after 可选：只要这个序号之后的。反应身体自己会做，这里只是让你知道，要不要接一句话由你决定。", """{"after":{"type":"integer","minimum":0}}""", []),

@@ -68,7 +68,7 @@ internal sealed partial class PetWindow : Window
     private int mutterToken;
     private bool textIdleActive;
     private bool coaxHoldPose;
-    private string? coaxStage4Text; // 第四层台词（由 AI 实时生成传入）
+    private string? coaxStage4Text; // 第四层台词（到点时取自 alarms.txt；演示时为空，用固定的那句）
     private ControlServer? server;
     private HttpApi? api;
     private string? trouble;
@@ -342,7 +342,8 @@ internal sealed partial class PetWindow : Window
         int stage = args.GetProperty("stage").GetInt32();
         if (stage != 0 && Wake()) coaxWoke = stage is >= 1 and <= 4; // 收着时被叫出来演哄睡：演完再自己收回去
         YieldMutter(); // 哄睡演出也优先：嘀咕让位
-        coaxStage4Text = args.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null; // 第四层台词（AI 实时生成）
+        coaxStage4Text = null; // 演示用固定的那句；到点的第四层台词来自 alarms.txt（Ring 里设置），不再接受 Agent 实时生成传入（用户 2026-11-12 去掉）
+        string? skitName = args.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null; // 只有演示小剧场（stage 6）用它
         if (stage == 0)
         {
             CoaxReturn();
@@ -352,7 +353,7 @@ internal sealed partial class PetWindow : Window
         if (stage == 6) // 演示待机小剧场：text 给小剧场名，不给就随机一个
         {
             if (skits.Count == 0) return Tools.Error("skits.txt 里还没有小剧场。");
-            var pick = coaxStage4Text != null && skits.ContainsKey(coaxStage4Text) ? coaxStage4Text : skits.Keys.ElementAt(random.Next(skits.Count));
+            var pick = skitName != null && skits.ContainsKey(skitName) ? skitName : skits.Keys.ElementAt(random.Next(skits.Count));
             PlaySkit(pick, force: true);
             return Tools.Text(new { stage = 6, skit = pick, all = skits.Keys.ToArray() });
         }
@@ -433,7 +434,7 @@ internal sealed partial class PetWindow : Window
         await Task.Delay(350); // 睁眼后停顿一下
         body.Apply("大前倾"); // 身子猛地向前倾
         await Task.Delay(1000);
-        SayLine(coaxStage4Text ?? "为 什 么 还 没 睡 ？", 2); // 每字 0.5 秒（台词由 AI 实时生成）
+        SayLine(coaxStage4Text ?? "为 什 么 还 没 睡 ？", 2); // 每字 0.5 秒
     }
 
     // 归位：恢复原来的体型、大小、视线跟随和位置（上一次消失的地方）。
