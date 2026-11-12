@@ -589,8 +589,6 @@ public partial class MainWindow : Window
             button.Click += async (_, _) => await Run(item, button);
             chip = button;
         }
-        chip.ToolTip = new TextBlock { Text = tip, TextWrapping = TextWrapping.Wrap };
-        ToolTipService.SetInitialShowDelay(chip, 450);
         chip.PreviewMouseRightButtonUp += (_, e) => { e.Handled = true; ToggleFavorite(item); };
         return chip;
     }
@@ -695,9 +693,6 @@ public partial class MainWindow : Window
         // 收藏夹里的开关按钮，高亮和主按钮一致
         foreach (var (item, button, fav) in toggles.Where(t => t.Fav))
             if (mainChips.TryGetValue(item.Key, out var main) && main is ToggleButton original) button.IsChecked = original.IsChecked;
-        // 主区按钮的右键提示里写“加入/移出”，跟着变
-        foreach (var (key, chip) in mainChips)
-            if (items.TryGetValue(key, out var item)) chip.ToolTip = new TextBlock { Text = (item.Tip.Length > 0 ? item.Tip + "\n" : "") + "右键：" + (ui.Favs.Contains(key) ? "移出常用" : "加入常用"), TextWrapping = TextWrapping.Wrap };
         ApplyFilter();
     }
 

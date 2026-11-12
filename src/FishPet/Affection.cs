@@ -15,14 +15,14 @@ namespace FishPet;
 //         连续两天以上一点动静都没有：回来时从第 3 天起每天 -2。
 //   每天加分合计最多 15 分、扣分合计最多 5 分（用户定的，2026-11-08）：各项自己的次数上限照旧，加起来超出的部分不算；
 //   加分和扣分各算各的，互不占额度（冷落、熬夜也算在当天的 5 分里）。
-//   掉级：会掉，但到了“熟悉”（20 分）以后最多掉回 20，不会再掉回“初识”。
+//   掉级：会掉，但到了“磨合”（20 分）以后最多掉回 20，不会再掉回“初识”。
 //
 // “动静”是用户本人在：发消息、点她、拖她、点托盘。按时睡觉看的是“前一晚最后一次动静”，在第二天早上 5 点后第一次有动静时算。
 internal sealed class Affection
 {
     internal const int Max = 200;
     internal const int DailyGain = 15, DailyLoss = 5;
-    internal static readonly (int From, string Name)[] Levels = [(0, "初识"), (20, "熟悉"), (60, "亲近"), (110, "黏人"), (160, "最喜欢")];
+    internal static readonly (int From, string Name)[] Levels = [(0, "初识"), (20, "磨合"), (60, "同频"), (110, "默契"), (160, "羁绊")];
 
     // 每种加减分：分数、每天最多算几次（0 不限）。按时睡、被哄才睡、熬夜、冷落一晚 / 一天只会算一次，不用上限。
     internal static readonly Dictionary<string, (int Points, int PerDay)> Rules = new()
