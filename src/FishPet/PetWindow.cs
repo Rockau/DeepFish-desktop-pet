@@ -374,8 +374,9 @@ internal sealed partial class PetWindow : Window
     }
 
     // 摆好某一层的体型、大小和位置并出场。返回出场位置；stage 非法返回 null。
-    private (double Left, double Top)? RunStage(int stage)
+    private (double Left, double Top)? RunStage(int stage, int fadeInMs = 220)
     {
+        coaxEpoch++; // 正在归位的话作废
         var area = SystemParameters.WorkArea;
         double targetLeft, targetTop;
         switch (stage)
@@ -422,7 +423,7 @@ internal sealed partial class PetWindow : Window
             default:
                 return null;
         }
-        AppearAt(targetLeft, targetTop);
+        AppearAt(targetLeft, targetTop, fadeInMs: fadeInMs);
         return (targetLeft, targetTop);
     }
 
@@ -437,18 +438,28 @@ internal sealed partial class PetWindow : Window
         SayLine(coaxStage4Text ?? "为 什 么 还 没 睡 ？", 2); // 每字 0.5 秒
     }
 
-    // 归位：恢复原来的体型、大小、视线跟随和位置（上一次消失的地方）。
-    private void CoaxReturn()
+    // 归位（用户 2026-11-13 改）：先快速鞠躬淡出退场，趁看不见恢复原来的体型、大小、视线跟随，
+    // 再在上一次的位置快速淡入。不再是正中的她一下变小、一下跳回去。
+    private int coaxEpoch; // 归位的路上又来了新的一层（RunStage）就把这次归位作废，别两边抢
+    private async void CoaxReturn()
     {
-        if (coaxShape != null) { settings.Shape = coaxShape; player?.SetShape(Shape); coaxShape = null; }
-        settings.FollowMouse = coaxFollowMouse;
-        if (coaxScale > 0) { settings.Scale = coaxScale; ApplySize(); }
-        if (coaxLeft is { } l && coaxTop is { } t) AppearAt(l, t, () => body.Relax()); // 淡出后收起黑脸盯人的样子
-        else body.Relax();
-        coaxLeft = coaxTop = null; coaxScale = 0;
-        coaxAutoReturn = false; coaxSpeechSeen = false; coaxReturnAt = null;
-        coaxHoldPose = false;
-        if (coaxWoke) { coaxWoke = false; _ = HideAfterCoax(); }
+        coaxAutoReturn = false; coaxSpeechSeen = false; coaxReturnAt = null; // 别每帧再触发
+        int epoch = ++coaxEpoch;
+        try
+        {
+            bool visible = await QuickLeave();
+            if (epoch != coaxEpoch) return;
+            if (coaxShape != null) { settings.Shape = coaxShape; player?.SetShape(Shape); coaxShape = null; }
+            settings.FollowMouse = coaxFollowMouse;
+            if (coaxScale > 0) { settings.Scale = coaxScale; ApplySize(); }
+            double left = coaxLeft ?? Left, top = coaxTop ?? Top;
+            coaxLeft = coaxTop = null; coaxScale = 0;
+            coaxHoldPose = false;
+            if (visible) AppearAt(left, top, () => body.Relax(), EnterFadeMs); // 在看不见的时候收起黑脸盯人的样子
+            else { body.Relax(); Left = left; Top = top; } // 被收起/退出打断：她们自己管淡出，这里只把状态放回去
+        }
+        catch (Exception error) { Places.Log("归位出错：" + error.Message); }
+        if (epoch == coaxEpoch && coaxWoke) { coaxWoke = false; _ = HideAfterCoax(); }
     }
 
     private async Task HideAfterCoax()
@@ -466,6 +477,7 @@ internal sealed partial class PetWindow : Window
         if (hiding) { hiding = false; image.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(200))); }
         if (!standby) return false;
         standby = false;
+        alarmLast = DateTime.Now; // 收着的时候主计时器不转，错过的哄睡/午饭提醒不补（否则出来后 2 分钟内会被补演一遍，用户 2026-11-13 不要）
         StartMusic(); // 出来了才开始听歌（收着的时候不白开采集进程）。要在 standby 落下之后：StartMusic 自己会看 standby
         nextFullscreenLook = default;
         if (player is { } current) UpdateFullscreen(current);
@@ -760,13 +772,13 @@ internal sealed partial class PetWindow : Window
     }
 
     // 出场/换位：先淡出消失，再到新位置淡入（去掉滑动效果）。mid 在淡出后、换位前做。
-    private async void AppearAt(double left, double top, Action? mid = null)
+    private async void AppearAt(double left, double top, Action? mid = null, int fadeInMs = 220)
     {
         image.BeginAnimation(OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(120)));
         await Task.Delay(140);
         mid?.Invoke();
         Left = left; Top = top;
-        image.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(220)));
+        image.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(fadeInMs)));
     }
 
     // A topmost window draws over the taskbar: whatever of her reaches it is not drawn, and clicks there
