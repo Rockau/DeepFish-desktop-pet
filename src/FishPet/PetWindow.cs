@@ -86,6 +86,10 @@ internal sealed partial class PetWindow : Window
     private NativePoint lastCursor;
     private DateTime lastCursorAt = DateTime.UtcNow;
     private bool mouseIdle;
+    // 鼠标停住后视线回正：0 没在回、1 眼睛在回（头还没动）、2 头也在回。头比眼睛晚 HeadReturnDelay 秒开始，转得慢（速率越小越慢，平时是 10）。
+    private int returnStage;
+    private DateTime returnAt;
+    private const double HeadReturnDelay = .5, HeadReturnRate = 1.6, EyeReturnRate = 5;
     private Rect open;
 
     // Her lines: one at a time, in order; a line of nothing but 〔〕 plays with no bubble.
@@ -777,6 +781,8 @@ internal sealed partial class PetWindow : Window
         double right = work.Right < monitor.Right ? Math.Clamp(work.Right - window.Left, left, window.Width) : window.Width;
         double bottom = work.Bottom < monitor.Bottom ? Math.Clamp(work.Bottom - window.Top, top, window.Height) : window.Height;
         var uncovered = new Rect(left, top, right - left, bottom - top);
+        // 本机改（2026-11-12）：按住左键拖动时不挡，全身盖过任务栏好看全貌；放手后再躲回任务栏后面。
+        if (dragging && dragged) uncovered = new Rect(0, 0, Width, Height);
         if (uncovered == open) return;
         open = uncovered;
         image.Clip = uncovered == new Rect(0, 0, Width, Height) ? null : new RectangleGeometry(uncovered);
@@ -854,6 +860,33 @@ internal sealed partial class PetWindow : Window
         {
             mouseIdle = true; // 鼠标停在同一处超过 5 秒，暂时关掉视线跟随
         }
+        // 鼠标停住以后的回正（用户 2026-11-12 要的：更慢更自然，眼睛先回正，头再跟着）：先让眼睛回到正中（渲染器里眼睛有自己的目标和速度），
+        // 隔一小会儿再让头慢慢转回来。别的原因的回正（关了跟随、摸头、小剧场）还是原来那样一下回去。
+        bool slowReturn = settings.FollowMouse && mouseIdle && !test && !stroking && !(settings.SkitPausesFollow && SkitOn);
+        if (slowReturn)
+        {
+            if (returnStage == 0 && (lookX is 9 || (lookX == 0 && lookY == 0))) return; // 本来就是正的
+            var at = DateTime.UtcNow;
+            if (returnStage == 0)
+            {
+                returnStage = 1; returnAt = at;
+                current.Send(FormattableString.Invariant($"lookrate {HeadReturnRate} {EyeReturnRate}"));
+                current.Send(FormattableString.Invariant($"look {lookX:0.00} {lookY:0.00} 0 0")); // 眼睛先回正，头先不动
+            }
+            else if (returnStage == 1 && (at - returnAt).TotalSeconds >= HeadReturnDelay)
+            {
+                returnStage = 2; lookX = lookY = 0;
+                current.Send("look 0 0 0 0"); // 头再慢慢转回来
+            }
+            return;
+        }
+        if (returnStage != 0)
+        {
+            // 回正做到一半鼠标又动了（或者别的原因打断）：快慢还原，让下面重新发一次目标（眼睛重新跟着头）
+            returnStage = 0;
+            current.Send("lookrate 10 10");
+            lookX = lookY = 9;
+        }
         if (!settings.FollowMouse || mouseIdle || test || stroking || (settings.SkitPausesFollow && SkitOn))
         {
             if (lookX == 0 && lookY == 0) return;
@@ -872,7 +905,9 @@ internal sealed partial class PetWindow : Window
     // She comes and goes with the agent (the owner, 2026-11-03: the agent closed, she was still there). Once an agent
     // has been connected, she bows out after a while with none, long enough for one that reconnects or restarts its
     // servers. A program on the HTTP interface keeps her while it uses her; started by hand with no agent, she stays.
-    private static readonly TimeSpan AloneFor = TimeSpan.FromMinutes(1), HttpUse = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan AloneFor = TimeSpan.FromSeconds(5), HttpUse = TimeSpan.FromSeconds(15); // 本机改（2026-11-12）：最后一个 Agent 一退出就走，缓冲从 1 分钟缩到 5 秒，只够 Agent 重启 MCP 重连
+    // 桥接正常关掉时（Agent 自己退了）会先说一声再见：那就不用等满一分钟，几秒就跟着退（用户 2026-11-12 要的）。
+    private static readonly TimeSpan FarewellFor = TimeSpan.FromSeconds(3), FarewellFresh = TimeSpan.FromSeconds(20);
     private bool hadAgent;
     private int agentsBefore;
     private DateTime? aloneSince;
@@ -886,9 +921,11 @@ internal sealed partial class PetWindow : Window
         if ((server?.Connections ?? 0) > 0) { hadAgent = true; aloneSince = null; return; }
         if (!hadAgent) return; // 手动打开、没接过 Agent 的，一直留着
         if (DateTime.UtcNow - lastHttp < HttpUse) { aloneSince = null; return; }
+        // 刚说过再见的（20 秒内）：等 3 秒就走，不用等满一分钟
+        bool goodbye = server?.FarewellAt is { } said && DateTime.UtcNow - said < FarewellFresh;
         aloneSince ??= DateTime.UtcNow;
-        if (DateTime.UtcNow - aloneSince < AloneFor) return;
-        Places.Log("接她的 Agent 都断开一分钟了，她先退下");
+        if (DateTime.UtcNow - aloneSince < (goodbye ? FarewellFor : AloneFor)) return;
+        Places.Log(goodbye ? "Agent 正常退出了，她跟着退下" : "接她的 Agent 都断开了，她先退下");
         Close();
     }
 

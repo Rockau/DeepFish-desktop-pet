@@ -196,11 +196,13 @@ public static class WhaleEar
         return sb.ToString();
     }
 
+    // Keep the parent Process object: building a new one every 50 ms cost ~15% of a core.
+    private static Process _parentProc;
     private static bool ParentAlive()
     {
         try
         {
-            using (var process = Process.GetProcessById(_parentPid)) return !process.HasExited;
+            if (_parentProc == null) _parentProc = Process.GetProcessById(_parentPid); return !_parentProc.HasExited;
         }
         catch { return false; }
     }

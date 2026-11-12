@@ -9,6 +9,9 @@
 #   PostToolUseFailure 工具出错         -> 出错（是编译、测试命令 -> 编译失败）
 #   PostToolUse Bash 成功               -> 只有测试命令才发：测试通过（输出里看得出有失败的 -> 编译失败）
 #   SessionStart(新开会话)              -> 开工        UserPromptSubmit 你发了消息  -> 收到
+#   SessionStart(接着上次 / 清空重来)   -> 新会话      PostToolUseFailure 被你中断  -> 中断
+#   思考超时：你发了消息 30 秒内，会话记录里没有新动静、最后一条也不是在等工具跑完，就喊一次（每轮最多一次）。
+#     做法：发消息那一刻拉起一个后台小进程（--think）睡 30 秒再看一眼；这一轮已经做完或你又发了新消息，它就悄悄走。
 # 定时任务（哄睡、午饭提醒）自己开的会话：发出的事件都带 auto，桌宠不把它当成你本人在（不记动静、不加亲密度）。
 # 会话状态（这一轮几点开始、是不是定时任务开的）记在同目录 sessions.json，一天前的自动清掉。
 # 她收着、在说话、冷却没到时桌宠自己会不演（也不会叫她出场），这里不用管。
@@ -56,6 +59,7 @@ API = find_api()
 LOG = HERE / "hook.log"
 SESSIONS = HERE / "sessions.json"
 LONG_TASK = 180  # 秒：这一轮超过这么久才算“长任务”
+THINK_TIMEOUT = 30  # 秒：发消息后这么久没有任何动静，算“思考超时”
 
 # 编译、测试命令（只看 Bash 的命令行）
 BUILD = re.compile(r"\b(dotnet\s+(build|publish|msbuild)|msbuild|npm\s+run\s+build|yarn\s+build|pnpm\s+build|cargo\s+build|go\s+build|make\b|cmake\s+--build|gradle|mvn|tsc\b|vite\s+build|setup\.ps1)", re.I)
@@ -125,7 +129,7 @@ def pick(data, session):
         return "子任务完成"
     if event == "PostToolUseFailure":
         if data.get("is_interrupt"):
-            return None
+            return "中断"
         command = command_of(data) if data.get("tool_name") == "Bash" else ""
         return "编译失败" if command and (BUILD.search(command) or TEST.search(command)) else "出错"
     if event == "PostToolUse":
@@ -134,7 +138,10 @@ def pick(data, session):
             return None
         return "编译失败" if FAILED.search(output_of(data)) else "测试通过"
     if event == "SessionStart":
-        return "开工" if data.get("source", "startup") == "startup" else None
+        source = data.get("source", "startup")
+        if source == "startup":
+            return "开工"
+        return "新会话" if source in ("resume", "clear") else None
     if event == "UserPromptSubmit":
         return "收到"
     return None
@@ -165,8 +172,17 @@ def main():
         sessions[sid] = session
         save_sessions(sessions)
     name = pick(data, session)
+    if data.get("hook_event_name") == "Stop" and sid and sid in sessions:
+        sessions[sid]["done"] = True  # 这一轮做完了：思考计时看到这个就不喊
+        save_sessions(sessions)
+    if data.get("hook_event_name") == "UserPromptSubmit" and not session.get("auto") and sid:
+        arm_think(sid, session["start"], str(data.get("transcript_path", "")))
     if not name:
         return
+    send_event(name, session, data.get("hook_event_name", ""))
+
+
+def send_event(name, session, source):
     try:
         api = json.loads(API.read_text(encoding="utf-8"))
         request = urllib.request.Request(
@@ -182,14 +198,83 @@ def main():
             text = json.dumps(json.loads(text), ensure_ascii=False)
         except Exception:
             pass
-        log(f"{data.get('hook_event_name')} -> {name}{'（定时任务）' if session.get('auto') else ''}: {text}")
+        log(f"{source} -> {name}{'（定时任务）' if session.get('auto') else ''}: {text}")
     except Exception as error:
-        log(f"{data.get('hook_event_name')} -> {name}: 没送到（{type(error).__name__}）")
+        log(f"{source} -> {name}: 没送到（{type(error).__name__}）")
+
+
+# ---- 思考超时：发消息那一刻拉起一个后台小进程，睡 THINK_TIMEOUT 秒再看一眼 ----
+
+def arm_think(sid, token, transcript):
+    if not transcript:
+        return
+    args = [sys.executable, "-X", "utf8", os.path.abspath(__file__), "--think", sid, repr(token), transcript]
+    env = {**os.environ, "FISH_HOOK_UTF8": "1"}
+    quiet = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "env": env, "close_fds": True}
+    try:
+        if os.name == "nt":
+            # 脱离 Claude Code 的进程组，hook 退出了它还活着；能挣脱作业对象（job）就挣脱，不行就退一步
+            detached = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+            try:
+                subprocess.Popen(args, creationflags=detached | 0x01000000, **quiet)  # CREATE_BREAKAWAY_FROM_JOB
+            except OSError:
+                subprocess.Popen(args, creationflags=detached, **quiet)
+        else:
+            subprocess.Popen(args, start_new_session=True, **quiet)
+        log(f"思考计时开始（{THINK_TIMEOUT} 秒）")
+    except Exception as error:
+        log(f"思考计时没拉起来（{type(error).__name__}）")
+
+
+def last_entry_waits_for_tool(transcript):
+    # 会话记录（jsonl）的最后一条是不是“助手发了工具调用、还在等结果”：是的话是工具在跑，不是在发呆
+    try:
+        with open(transcript, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - 65536))
+            lines = handle.read().decode("utf-8", "replace").splitlines()
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            entry = json.loads(line)
+            content = (entry.get("message") or {}).get("content")
+            if entry.get("type") == "assistant" and isinstance(content, list):
+                return any(isinstance(block, dict) and block.get("type") == "tool_use" for block in content)
+            return False
+    except Exception:
+        pass
+    return False
+
+
+def think_watch(sid, token, transcript):
+    time.sleep(THINK_TIMEOUT)
+    sessions = load_sessions()
+    session = sessions.get(sid, {})
+    if repr(session.get("start")) != token or session.get("done"):
+        log("思考计时：这一轮已经结束或有了新消息，不喊")
+        return
+    try:
+        age = time.time() - os.path.getmtime(transcript)
+    except Exception:
+        log("思考计时：读不到会话记录，不喊")
+        return
+    if age < THINK_TIMEOUT - 3:
+        log(f"思考计时：{age:.0f} 秒前还有动静，不喊")
+        return
+    if last_entry_waits_for_tool(transcript):
+        log("思考计时：最后一条是工具调用，在等工具跑完，不喊")
+        return
+    send_event("思考超时", session, "思考计时")
 
 
 if __name__ == "__main__":
     try:
-        main()
+        if sys.argv[1:2] == ["--think"] and len(sys.argv) >= 5:
+            think_watch(sys.argv[2], sys.argv[3], sys.argv[4])
+        else:
+            main()
     except Exception:
         pass
     sys.exit(0)

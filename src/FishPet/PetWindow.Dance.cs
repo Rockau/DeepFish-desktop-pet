@@ -11,12 +11,14 @@ namespace FishPet;
 //   · 跳舞时的脸不跟拍子：开跳约 30 秒演一个表情，演 15 秒收回，再等约 30 秒轮到下一个，
 //     一轮三个不重样（眯眼笑＋微笑 / 眯眼笑＋大笑 / 闭眼＋挑眉，用户定的）；
 //   · 说话、摆姿势、被摸、被拖、被藏起来的时候让位，演完当前这一句就停。
+// （2026-11-12 试过按拍点相位实时驱动，用户看了效果不好，已回滚到这个一句一句的做法；BeatTracker 只留着给 BPM 用。）
 internal sealed partial class PetWindow
 {
     private Music? music;
     private DispatcherTimer? danceTimer;
     private DateTime danceLogAt;
     private DateTime danceMissAt;
+    private string danceMissWhy = "";
 
     private DateTime danceNextAt;
     // 跳舞时的表情（用户 2026-11-12 定）：平时默认脸，跳起来约 30 秒演一个，演 15 秒收回，
@@ -63,7 +65,7 @@ internal sealed partial class PetWindow
     {
         danceTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render, (_, _) => DanceStep(), Dispatcher);
         if (danceTimer.IsEnabled) return;
-        danceNextAt = DateTime.MinValue;
+        // 不重置 danceNextAt：上一句动作发给渲染器就收不回了，断了又续上时要等它演完，不然两句叠在一起（2026-11-12 修）。
         danceTimer.Start();
     }
 
@@ -87,13 +89,13 @@ internal sealed partial class PetWindow
             // 拍子/识别偶尔断一下不算停：忍 1.5 秒，别一帧一帧地跳停（2026-11-10）
             if (Dancing)
             {
-                if (danceMissAt == default) { danceMissAt = now; return; }
+                if (danceMissAt == default) { danceMissAt = now; danceMissWhy = StopReason(ears, beat); return; } // 原因在第一次掉的那一刻记下来，1.5 秒后状态可能已经变了
                 if ((now - danceMissAt).TotalSeconds < 1.5) return;
                 Dancing = false;
                 body.DanceFace(-1); // 不跳了，脸上收回去
                 // 只有「表情正演着一半被打断」才重新等一个；还没到点的，已经累计的时间留着（用户 2026-11-12 要的）
                 if (danceMood >= 0) { danceMood = -1; danceFaceShown = 0; danceFaceLeft = WaitBeforeFace(); }
-                Places.Log("跟着音乐停下来了");
+                Places.Log("跟着音乐停下来了：" + danceMissWhy);
             }
             danceFaceClock = now; // 这中间的停顿不算「在跳的时间」
             if (!beat.Playing || !ears.Rhythmic) StopDanceTimer();
@@ -103,8 +105,7 @@ internal sealed partial class PetWindow
 
         if (!Dancing)
         {
-            Dancing = true;
-            danceNextAt = DateTime.MinValue; // 一进来就先动一下
+            Dancing = true; // 上一句还没演完就等它演完（danceNextAt 留着），没有上一句就马上动
             // 表情的计时按「在跳的时间」累计：中途被打断不白等，回来接着数（用户 2026-11-12 要的）。
             if (danceFaceLeft < 0) danceFaceLeft = WaitBeforeFace();
             danceFaceClock = now;
@@ -185,17 +186,34 @@ internal sealed partial class PetWindow
         danceFaceShown = 0;
     }
 
-    private bool DancingAllowed()
+    private bool DancingAllowed() => DanceBlockedBy() == null;
+
+    // 说话、摆姿势、被摸、被拖、头晕、藏起来的时候让位：那几样也在动同一批参数，不能抢。返回挡住她的那一样，没有就是 null。
+    private string? DanceBlockedBy()
     {
-        // 说话、摆姿势、被摸、被拖、头晕、藏起来的时候让位：那几样也在动同一批参数，不能抢。
-        return !test && !exiting && !standby && !hiding && !hiddenForFullscreen
-            && !stroking && !dragging && !dizzyOn
-            && !body.Posing && !SkitOn && silent == null && !speech.IsSaying;
+        if (test) return "测试模式";
+        if (exiting) return "正在退场";
+        if (standby) return "收起待命";
+        if (hiding) return "正在收起";
+        if (hiddenForFullscreen) return "全屏让位";
+        if (stroking) return "被摸";
+        if (dragging) return "被拖";
+        if (dizzyOn) return "头晕";
+        if (body.Posing) return "摆姿势";
+        if (SkitOn) return "演小剧场";
+        if (silent != null) return "做静默表情";
+        if (speech.IsSaying) return "说话";
+        return null;
+    }
+
+    // 停下来的原因（只写日志，查为什么一会儿跳一会儿停用）。
+    private string StopReason(Music ears, Music.Snapshot beat)
+    {
+        var reasons = new List<string>();
+        if (!beat.Playing) reasons.Add("没在放（响度停了或采集器没数据）");
+        if (!ears.Rhythmic) reasons.Add($"拍子不够密（8 秒内 {ears.BeatCount} 个拍点，要 ≥3）");
+        if (!ears.AppPlaying(settings.MusicApps, true)) reasons.Add("白名单软件电平不够（各应用 " + ears.AppsText + "）");
+        if (DanceBlockedBy() is { } blocked) reasons.Add("让位：" + blocked);
+        return reasons.Count == 0 ? "（掉的那一刻已经恢复了）" : string.Join("；", reasons);
     }
 }
-
-
-
-
-
-

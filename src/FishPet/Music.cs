@@ -37,12 +37,19 @@ internal sealed class Music : IDisposable
     private int generation, failures;
     private readonly List<DateTime> beatTimes = [];
     private readonly TempoTracker tempo = new();
+    // 拍点同步（本机加，2026-11-12）：听一整段低音起音曲线估速度和相位，舞步按它的「拍位置」摆（Beat.cs）。
+    private readonly BeatTracker beats = new();
+    private double lastOnsetBase;
     private double rms, bass, fluxAverage = .012, soundFor, level, bassSmooth, warmup;
     private readonly Dictionary<string, double> apps = new(StringComparer.OrdinalIgnoreCase); // 在出声的应用 → 电平
     private DateTime lastLineAt = DateTime.MinValue, lastStartAt = DateTime.MinValue, lastSoundAt = DateTime.MinValue;
     private TimeSpan lastRead;
 
-    internal Music(bool wanted) => this.wanted = wanted;
+    internal Music(bool wanted)
+    {
+        this.wanted = wanted;
+        beats.Log = Places.Log;
+    }
 
     private static string Script => Path.Combine(Places.Root, "audio", "probe.ps1");
 
@@ -51,11 +58,20 @@ internal sealed class Music : IDisposable
         get { lock (gate) return playing; }
     }
 
-    // 现在的节拍速度（日志用）。
+    // 现在的节拍速度：锁定了节拍就用它，没有就用老的估法。
     internal double Tempo
     {
-        get { lock (gate) return tempo.Bpm; }
+        get { lock (gate) return beats.Locked ? beats.Bpm : tempo.Bpm; }
     }
+
+    // ---- 拍点同步（舞步用）----
+    // 单调时钟的现在（秒），和节拍追踪用的是同一个钟。
+    internal double Now => clock.Elapsed.TotalSeconds;
+    internal bool BeatLocked { get { lock (gate) return beats.Locked; } }
+    internal double BeatClarity { get { lock (gate) return beats.Clarity; } }
+    internal double BeatPeriod { get { lock (gate) return beats.Period; } }
+    // 某一时刻的拍位置（整数 = 一拍落下，序号奇偶由追踪器定）；还没对上相位是 NaN。
+    internal double BeatPosition(double t) { lock (gate) return beats.Position(t); }
 
     // 最近这几秒里拍子够不够密：够密才像音乐，够密才值得跟着跳。
     // 说话、播客之类也有声音，但拍子零碎，这时她只慢慢晃，不会乱蹦。
@@ -104,6 +120,12 @@ internal sealed class Music : IDisposable
     internal bool Rhythmic
     {
         get { lock (gate) return RecentBeats() >= 3; }
+    }
+
+    // 最近 8 秒的拍点数（停下来的原因日志用）。
+    internal int BeatCount
+    {
+        get { lock (gate) return RecentBeats(); }
     }
 
     private int RecentBeats()
@@ -216,19 +238,24 @@ internal sealed class Music : IDisposable
             }
 
         double loudness = rmsValue.GetDouble();
-        double low = 0;
-        int used = 0;
+        double low = 0, low3 = 0;
+        int used = 0, used3 = 0;
         // 只看最低两段（大约 0~3kHz）：鼓、贝斯、军鼓的身子在这里；踩镲、镲片在高频，
         // 把它们算进来会让人误以为拍子在加倍（70 BPM 的歌听成 140）。
+        // 节拍追踪多看一段（最低三段）：拿一段真实录音比过，起音对比最清楚（本机，2026-11-12）。
         if (root.TryGetProperty("bands", out var bands) && bands.ValueKind == JsonValueKind.Array)
             foreach (var band in bands.EnumerateArray())
             {
-                if (used >= 2) break;
+                if (used3 >= 3) break;
                 if (band.ValueKind != JsonValueKind.Number) continue;
-                low += band.GetDouble();
-                used++;
+                double value = band.GetDouble();
+                if (used < 2) { low += value; used++; }
+                low3 += value; used3++;
             }
         low = used > 0 ? low / used : 0;
+        double onsetBase = Math.Sqrt(Math.Max(0, used3 > 0 ? low3 / used3 : 0));
+        beats.Add(clock.Elapsed.TotalSeconds, Math.Max(0, onsetBase - lastOnsetBase));
+        lastOnsetBase = onsetBase;
 
         var now = DateTime.UtcNow;
         rms = loudness;
@@ -286,6 +313,7 @@ internal sealed class Music : IDisposable
             {
                 playing = false;
                 soundFor = 0;
+                beats.Reset();
                 Places.Log("音乐停了");
             }
             if (playing && DateTime.UtcNow - lastLineAt > LineTimeout)
@@ -319,11 +347,19 @@ internal sealed class Music : IDisposable
     internal void Start() => Spawn();
 
     // 采集器自己走了（改脚本、被杀）时再拉一次。
+    // 起来没多久就退出的算失败：失败次数越多，下一次重启等得越久（最多 30 秒），别每帧重启一次（2026-11-12 修，
+    // 11-11 出过 1 秒 263 次的重启风暴）。退避中拉不起来的，每帧回来再试，等到时间了就起。
     internal void Watch()
     {
-        bool dead;
-        lock (gate) dead = probe is { HasExited: true };
-        if (dead) Restart("进程退出了");
+        bool dead, quick = false;
+        lock (gate)
+        {
+            if (disposed || !wanted) return;
+            dead = probe is { HasExited: true };
+            if (dead && DateTime.UtcNow - lastStartAt < TimeSpan.FromSeconds(8)) { failures++; quick = true; }
+            if (!dead && probe == null && failures > 0) { Spawn(); return; } // 退避期里没起成的：到点再起（Spawn 自己会看退避）
+        }
+        if (dead) Restart(quick ? "进程起来没多久就退出了（连续 " + failures + " 次）" : "进程退出了");
     }
 
     public void Dispose()

@@ -384,7 +384,9 @@ internal sealed partial class PetWindow
         double fx = Math.Clamp(dragVel.X / 900, -1, 1), fy = Math.Clamp(dragVel.Y / 900, -1, 1);
 
         // 一套参数，抓哪儿都一样（用户 2026-11-12 定的：只留腰那一档，再增强 30%）
-        const double bodyAmp = 1.3, headGain = .98;
+        // 全身摆动强度（用户 2026-11-12）：比原来整体强 30%，拖得越快越强，到 1500 像素/秒封顶，封顶是原来的 1.6 倍。
+        double boost = 1.3 + .3 * Math.Clamp(speed / 1500, 0, 1);
+        double bodyAmp = 1.3 * boost, headGain = .98 * boost;
         const double bodyK = 70, bodyC = 7, headK = 40, headC = 5;
 
         // 一级：身子（速度带着走）
@@ -392,7 +394,7 @@ internal sealed partial class PetWindow
         Aim("ParamBodyAngleZ", fx * 2.5 * bodyAmp, bodyK, bodyC);
         Aim("ViewRoll", fx * 4 * bodyAmp, bodyK, bodyC);
         // 垂直方向（用户 2026-11-12 要的：弹簧程度再强 40%，之后又加 30%）：往下放压扁、往上提拉长，幅度 ×1.82
-        Aim("ViewSquash", Math.Clamp(fy * .082, -.073, .091), bodyK, bodyC);
+        Aim("ViewSquash", Math.Clamp(fy * .082 * boost, -.073 * boost, .091 * boost), bodyK, bodyC);
         Aim("ViewX", 0, bodyK, bodyC); // 整体横移先不加：那一挪，抓着的部位就不跟手了
 
         // 二级：头跟着身子实际摆到的位置，方向相反（被拖着走），慢一步、会过冲
@@ -400,7 +402,7 @@ internal sealed partial class PetWindow
         double norm = maxBody > 0 ? Math.Clamp(Aimed("ParamBodyAngleX") / maxBody, -1.2, 1.2) : 0;
         Aim("FaceAngleZ", -headGain * norm * 18, headK, headC);
         Aim("FaceAngleX", -headGain * norm * 7, headK, headC);
-        Aim("FaceAngleY", fy * 14.6, headK, headC); // 上下拖时的点头：8 × 1.4 × 1.3
+        Aim("FaceAngleY", fy * 14.6 * boost, headK, headC); // 上下拖时的点头：8 × 1.4 × 1.3
 
         // 头晕：转圈、来回甩、拖得太快都会累积；平稳了慢慢退。
         if (speed > 150)
