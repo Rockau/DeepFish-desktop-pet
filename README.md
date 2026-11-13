@@ -149,6 +149,8 @@
 **本仓库修改**
 
 - Rockau
+- 语音版本：https://github.com/ICEAXEMAN/DeepFish-voice
+  由 ICEAXEMAN 基于本项目改进的分支，给大肥鱼加上了日语语音：固定台词有两套预录配音（青春活力 / 冷静沉稳），现编的话还可以接本机 GPT-SoVITS 实时合成。想让她开口说话的，可以去看看。
 
 ### 模型与 SDK
 
