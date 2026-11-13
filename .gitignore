@@ -19,6 +19,7 @@ errors.log
 api.json
 *.old
 *.tmp
+*.bad
 
 # 每个人自己的大肥鱼：羁绊、记忆小本本（都只存在本机，绝不上传）
 affection.json

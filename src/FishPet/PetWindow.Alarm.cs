@@ -44,10 +44,17 @@ internal sealed partial class PetWindow
             var text = AlarmLine(slot.Name);
             Places.Log($"到点：{slot.Name}");
             YieldMutter();
+            bool hadPlace = coaxScale != 0; // 之前已经有人记过位置（别的一层还在演）就别替人家清掉
             RememberPlace();
             // 她正说着话（比如在回你）先让她说完，最多等 8 秒；等的时候被收起/退出就不演了
             for (int wait = 0; wait < 40 && speech.IsSaying && !standby && !hiding && !exiting; wait++) await Task.Delay(200);
-            if (!await QuickLeave()) return;
+            if (!await QuickLeave())
+            {
+                // 被打断了，没演成，也不会有人来归位：把刚记下的位置忘掉，不然下次闹钟会跳过记录、
+                // 归位时把你中间改过的体型、大小改回旧的
+                if (!hadPlace) ForgetPlace();
+                return;
+            }
             if (slot.Stage == 4)
             {
                 coaxStage4Text = text;

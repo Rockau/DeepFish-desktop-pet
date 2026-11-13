@@ -149,13 +149,23 @@ internal sealed class Affection
                 return loaded;
             }
         }
-        catch { }
+        catch
+        {
+            // 读坏的原件留一份：不然下一次存盘就把它盖成一份全新的，羁绊点数无声归零
+            try { if (File.Exists(path)) File.Copy(path, path + ".bad", overwrite: true); } catch { }
+        }
         return new Affection();
     }
 
     internal void Save(string path)
     {
-        try { File.WriteAllText(path, JsonSerializer.Serialize(this, Format)); }
+        try
+        {
+            // 先写临时文件再换过去，写到一半被杀进程、断电也不会留下半截文件
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(this, Format));
+            File.Move(temp, path, overwrite: true);
+        }
         catch { }
     }
 }

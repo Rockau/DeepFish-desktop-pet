@@ -374,6 +374,14 @@ internal sealed partial class PetWindow : Window
         coaxFollowMouse = settings.FollowMouse;
     }
 
+    // 记下了位置但这一层没演成（被收起、退出打断）：把记录丢掉，等于没记过。
+    private void ForgetPlace()
+    {
+        coaxShape = null;
+        coaxScale = 0;
+        coaxLeft = coaxTop = null;
+    }
+
     // 摆好某一层的体型、大小和位置并出场。返回出场位置；stage 非法返回 null。
     private (double Left, double Top)? RunStage(int stage, int fadeInMs = 220)
     {
