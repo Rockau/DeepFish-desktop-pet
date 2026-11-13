@@ -9,5 +9,6 @@
     <AssemblyName>FishPet</AssemblyName>
     <RootNamespace>FishPet</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\DeepFish.ico</ApplicationIcon>
   </PropertyGroup>
 </Project>
