@@ -118,6 +118,10 @@ internal sealed partial class Body
         ["摇摆一"] = (_, s, _) => Dance(s, Enumerable.Repeat(.45, 12).ToArray(), [1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1], false),
         // 摇摆二（用户，2026-11-08 改）：不再左右甩头，改成可爱的歪头、扭头、耸肩，跟着拍子一下一下颠，节奏是左右左右左右（用户改，比第一段慢：6 拍走完原来 8 拍的时长）。
         ["摇摆二"] = (_, s, _) => Groove(s, Enumerable.Repeat(.4 * 8 / 6, 6).ToArray(), [1, -1, 1, -1, 1, -1]),
+        // 小剧场「跳舞」专用的第一、第二阶段（本机加，2026-11-13，用户要的）：身体摆动幅度 -30%、速度放慢 30%（每拍拉长到 1/0.7 倍）。
+        // 另起名字、不动「摇摆一」「摇摆二」本身：放歌跳舞（DanceToBeat）和慢摇照旧。拉长后一句的时长见 skits.txt 里的停留秒数。
+        ["剧场摇摆一"] = (_, s, _) => Dance(s * .7, Enumerable.Repeat(.45, 12).ToArray(), [1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1], false, 1 / .7),
+        ["剧场摇摆二"] = (_, s, _) => Groove(s * .7, Enumerable.Repeat(.4 * 8 / 6, 6).ToArray(), [1, -1, 1, -1, 1, -1], 1 / .7),
         // 慢摇（用户，2026-11-09 改）：不再用第一段的转身甩头，改成摇摆二的动作（歪头、扭头、耸肩、颠一下）接着往下做，
         // 从第二段停下的那一边（右）的下一拍（左）接着来，越摇越慢越小，渐渐停下。拍子和总长都没变（3.86 秒）。
         ["慢摇"] = (_, s, _) => Groove(s, [.7, .9, 1.1], [1, -.7, .4]),
@@ -127,10 +131,10 @@ internal sealed partial class Body
     // 一段舞：每一拍（hits）身体转到一边（正数转向屏幕左边，负数右边，绝对值是幅度），头往反方向转、反方向歪，
     // 头比身子晚 0.14 秒到，两头不是同一刻一起掉头，看着连贯；头还走一条小拱形（拍点低头、两拍中间抬头），就是点头。
     // gaps 是每一拍的长度（秒）；dip：同一边连着两拍时，两拍之间身体回弹一半（“顿”一下）。每条轨迹最后都回到 0。
-    private static Word Dance(double size, double[] beats, double[] hits, bool dip)
+    private static Word Dance(double size, double[] beats, double[] hits, bool dip, double stretch = 1)
     {
         // 整体速度降低 30%（用户，2026-11-06）：每一拍都拉长到 1/0.7 倍。
-        var gaps = beats.Select(beat => beat / .7).ToArray();
+        var gaps = beats.Select(beat => beat / .7 * stretch).ToArray();
         const double HeadLag = .14;
         var times = new double[hits.Length];
         times[0] = gaps[0] / 2;
@@ -166,9 +170,9 @@ internal sealed partial class Body
     // 第二段舞：每一拍头歪向一边、脸跟着转过去一点，同一边的肩膀耸起来靠向头，身子轻轻往那边扭；每拍落下时整个人往下颠一下、
     // 头点一下，拍子就出来了。同一边连着两拍时，第二拍是“再歪一下”：中间先回弹一半再歪回去，比第一拍更俏皮一点。
     // 所有轨迹都是一拍一个关键帧、中间平滑过渡（渲染器用 smoothstep），只有拍点，不停顿，所以是丝滑的。
-    private static Word Groove(double size, double[] beats, double[] hits)
+    private static Word Groove(double size, double[] beats, double[] hits, double stretch = 1)
     {
-        var gaps = beats.Select(beat => beat / .7).ToArray();
+        var gaps = beats.Select(beat => beat / .7 * stretch).ToArray();
         var times = new double[hits.Length];
         times[0] = gaps[0] / 2;
         for (int i = 1; i < hits.Length; i++) times[i] = times[i - 1] + (gaps[i - 1] + gaps[i]) / 2;
