@@ -35,7 +35,7 @@ internal sealed class Settings
     // 拖到屏幕边上会弹回来，脸始终留在工作区里。默认关：能拖出屏幕，只留一小截在外面能拖回来。
     public bool KeepOnScreen { get; set; } = false;
     // Seconds between the small things she does by herself when nobody talks to her.
-    public int IdleSeconds { get; set; } = 180;
+    public int IdleSeconds { get; set; } = 300;
     // 到点叫人（本机加，2026-11-08）：按这台电脑的时钟，00:30 起四层哄睡、11:30 午饭提醒。默认关，托盘“更多”里能开。
     public bool CoaxSleep { get; set; } = false;
     public bool CoaxLunch { get; set; } = false;
