@@ -119,11 +119,12 @@ internal sealed partial class PetWindow : Window
     private readonly List<Happening> happenings = [];
     private long sequence;
 
-    internal PetWindow(Settings settings, string? model, bool test, string? pipe = null)
+    internal PetWindow(Settings settings, string? model, bool test, string? pipe = null, bool manual = false)
     {
         this.settings = settings; this.model = model; this.test = test;
         Condition.Birthday = settings.Birthday; // 生日那天的台词、小剧场（mutter.txt、skits.txt 里的 @生日）
-        standby = settings.StartHidden && !test;
+        manualStart = manual;
+        standby = settings.StartHidden && !test && !manual; // 手动叫出来的（桌面图标）不管「启动时先收起」，直接露面
         Title = "大肥鱼";
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false; ShowActivated = false; Topmost = true;
@@ -168,6 +169,7 @@ internal sealed partial class PetWindow : Window
                 Recorder.Init(Dispatcher, RecordLayout);
             }
             server = new ControlServer(Execute, pipe);
+            server.WakeRequested = () => Dispatcher.BeginInvoke(() => { if (Wake(greet: true)) NoAgentHint(); });
             try { api = HttpApi.Start(Places.ApiFile, test ? 0 : HttpApi.DefaultPort, (name, args, token) => { if (!HttpApi.Passive.Value) lastHttp = DateTime.UtcNow; return Execute(name, args, token); }); }
             catch (Exception error) { Places.Log("网页接口开不起来：" + error.Message); }
             // A newer plugin on GitHub, looked for now and twice a day; the agent hears of it with its next tool (Execute).
@@ -279,7 +281,22 @@ internal sealed partial class PetWindow : Window
         behavior.Show("问候", DateTime.UtcNow);
         body.Apply("抚胸");
         WelcomeSoon(); // 全新安装的第一次出场，接着说几句欢迎（只说这一次）
+        if (manualStart) NoAgentHint();
     }
+
+    // 手动叫出来（桌面图标）时，几秒后还没有 Agent 连上，就提一句，免得用户以为她坏了。
+    private readonly bool manualStart;
+    private async void NoAgentHint()
+    {
+        try
+        {
+            await Task.Delay(3500);
+            if (exiting || standby || (server?.Connections ?? 0) > 0) return;
+            _ = InTurn(() => { if (!exiting && (server?.Connections ?? 0) == 0) SayLine("〔歪一下头:右 微笑〕现在还没连上 Agent 哦~"); return Task.CompletedTask; }, CancellationToken.None);
+        }
+        catch (Exception error) { Places.Log("没连上 Agent 的提示出错：" + error.Message); }
+    }
+
 
     private void ApplySize()
     {

@@ -89,6 +89,24 @@ if (Test-Path -LiteralPath $tray) {
         if (Test-Path $path) { & icacls $path /setintegritylevel '(OI)(CI)M' /T 2>$null | Out-Null }
     }
 }
+# 桌面上放一个「大肥鱼」图标：双击就能手动把她叫出来（不用在 Agent 里打字）。--manual 让她不管「启动时先收起」直接露面，
+# 她已经在收着待命就叫醒。每次装/更新都会按现在的路径重写一次这个快捷方式。
+try {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $ico = Join-Path $root '大肥鱼.ico'
+    if ((Test-Path -LiteralPath $desktop) -and (Test-Path -LiteralPath (Join-Path $root 'bin\FishPet.exe'))) {
+        $shell = New-Object -ComObject WScript.Shell
+        $link = $shell.CreateShortcut((Join-Path $desktop '大肥鱼.lnk'))
+        $link.TargetPath = Join-Path $root 'bin\FishPet.exe'
+        $link.Arguments = '--manual'
+        $link.WorkingDirectory = $root
+        $link.Description = '把大肥鱼叫出来'
+        if (Test-Path -LiteralPath $ico) { $link.IconLocation = $ico + ',0' }
+        $link.Save()
+        Ok '桌面上放好了「大肥鱼」图标，双击就能把她叫出来'
+    }
+} catch { Write-Host ('桌面图标没放成（不影响使用）：' + $_.Exception.Message) -ForegroundColor Yellow }
+
 # 测试和自检要往临时目录里写文件：插件可能带着低完整性标签（Agent 的工作区、沙箱），系统的临时目录反而写不进去，
 # 指到插件自己的 cache 下面最稳（本机修，2026-11-11）。
 $tmp = Join-Path $root 'cache\tmp'
