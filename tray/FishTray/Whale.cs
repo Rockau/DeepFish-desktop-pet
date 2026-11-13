@@ -13,6 +13,7 @@ internal static class Whale
 {
     private const float FishSize = 0.70f;   // 鲸鱼宽度占图标的比例
     private const float FishDown = 0.02f;   // 往下挪一点，视觉上才在圆里居中（尾鳍那头偏上）
+    private const float FishLeft = 0.03f;   // 往左挪一丁点，右上角的尾巴别太贴圆边（2026-11-13）
     private const float GradientAngle = 61.7f; // 渐变方向：左上浅、右下深（x 占 0.35、y 占 0.65）
 
     internal static Bitmap Draw(int s, bool badge = true)
@@ -49,7 +50,7 @@ internal static class Whale
             PointF P(int i)
             {
                 i = ((i % n) + n) % n;
-                return new PointF((loop[i * 2] * FishSize + 0.5f) * f, (loop[i * 2 + 1] * FishSize + 0.5f + FishDown) * f);
+                return new PointF((loop[i * 2] * FishSize + 0.5f - FishLeft) * f, (loop[i * 2 + 1] * FishSize + 0.5f + FishDown) * f);
             }
             path.StartFigure();
             for (int i = 0; i < n; i++)
