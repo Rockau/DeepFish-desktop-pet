@@ -56,6 +56,7 @@ public partial class MainWindow : Window
         public List<string> Favs { get; set; } = [];
         public bool Pin { get; set; }
         public bool More { get; set; }
+        public bool Taskbar { get; set; } // 在任务栏显示面板（默认关）：开了任务栏上有个按钮，面板有最小化键；点 X 仍是收回小托盘
 
         private static string File_ => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "ui.json"));
         internal static Ui Load()
@@ -81,6 +82,7 @@ public partial class MainWindow : Window
         MaxHeight = Math.Min(900, SystemParameters.WorkArea.Height - 8);
         ui = Ui.Load();
         Topmost = ui.Pin; PinButton.IsChecked = ui.Pin;
+        SwTaskbar.IsChecked = ui.Taskbar; ApplyTaskbar();
         MoreToggle.IsChecked = ui.More; MorePanel.Visibility = ui.More ? Visibility.Visible : Visibility.Collapsed;
 
         shapeSeg = MakeSeg(ShapeHost, ShapeNames, "shape", i => Queue("shape", ShapeIds[i]));
@@ -101,7 +103,9 @@ public partial class MainWindow : Window
         Wire(SwMusicDance, "music_dance"); Wire(SwFollow, "follow_mouse"); Wire(SwFull, "hide_on_fullscreen"); Wire(SwStartHidden, "start_hidden"); Wire(SwKeepOn, "keep_on_screen"); Wire(SwCoaxSleep, "coax_sleep"); Wire(SwCoaxLunch, "coax_lunch");
 
         ShowSwitch.Click += async (_, _) => await SetShown(ShowSwitch.IsChecked == true);
-        CloseButton.Click += (_, _) => Hide();
+        CloseButton.Click += (_, _) => Hide(); // 点 X 只是关面板、收回小托盘，不退出
+        MinButton.Click += (_, _) => WindowState = WindowState.Minimized;
+        SwTaskbar.Click += (_, _) => { ui.Taskbar = SwTaskbar.IsChecked == true; ui.Save(); ApplyTaskbar(); Notice(ui.Taskbar ? "任务栏上会显示面板" : "不再在任务栏显示"); };
         PinButton.Click += (_, _) => { ui.Pin = PinButton.IsChecked == true; Topmost = ui.Pin; ui.Save(); Notice(ui.Pin ? "已固定在最前面" : "取消固定"); };
         MoreToggle.Click += (_, _) => { ui.More = MoreToggle.IsChecked == true; MorePanel.Visibility = ui.More ? Visibility.Visible : Visibility.Collapsed; ui.Save(); };
         Header.MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) { moved = true; try { DragMove(); } catch { } } };
@@ -114,6 +118,13 @@ public partial class MainWindow : Window
         SearchBox.TextChanged += (_, _) => ApplyFilter();
         SearchClear.Click += (_, _) => { SearchBox.Clear(); SearchBox.Focus(); };
         SizeChanged += (_, _) => { if (!moved && IsVisible) Anchor(); else if (IsVisible) KeepOnScreen(); };
+    }
+
+    // 在任务栏显示面板：开了才有任务栏按钮和最小化键；关着（默认）时和以前完全一样。
+    private void ApplyTaskbar()
+    {
+        ShowInTaskbar = ui.Taskbar;
+        MinButton.Visibility = ui.Taskbar ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnKeyDown(object sender, KeyEventArgs e)
@@ -222,6 +233,7 @@ public partial class MainWindow : Window
     {
         if (!IsVisible)
         {
+            WindowState = WindowState.Normal;
             moved = false;
             Opacity = 0;
             if (SkitSignature() != skitSignature) BuildSections(); // skits.txt 改过：小剧场按钮跟着换
@@ -229,6 +241,7 @@ public partial class MainWindow : Window
             Anchor();
             BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
         }
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; // 最小化在任务栏里的：从托盘点开也要还原
         Activate();
         _ = Refresh();
     }

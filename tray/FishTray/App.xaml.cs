@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -134,7 +134,6 @@ public partial class App : System.Windows.Application
     private void OpenPanel()
     {
         if (panel is null) return;
-        if (panel.IsVisible) { panel.Activate(); return; }
         panel.Open();
     }
 
