@@ -63,7 +63,7 @@ void VerifyIdleSelfTalk()
     live2d = new Behavior(sent.Add, () => [], new Random(7))
     {
         TextIdleMoods = ["甲", "乙"], TextIdle = texts.Add, SkitIdleMoods = ["戏一", "戏二"],
-        // 真实运行时 PetWindow 会在开演前调用 SkitPlayed；测试里也补上，否则 12 分钟优先规则会一直抢。
+        // 真实运行时 PetWindow 会在开演前调用 SkitPlayed，测试里也补上。
         SkitIdle = name => { plays.Add(name); live2d!.SkitPlayed(tickNow); },
         IdleStarted = moves.Add,
     };
@@ -71,9 +71,10 @@ void VerifyIdleSelfTalk()
     for (int i = 1; i <= 400; i++) { tickNow = start.AddSeconds(i * 41); live2d.Tick(tickNow, false, 40); }
     Check(texts.Count > 0 && plays.Count > 0 && moves.Count > 0, "she picks a line, a little play and a move");
     Check(plays.Distinct().Count() == 2 && texts.Distinct().Count() == 2, "every one of them comes up");
-    // 三类平分：各占约三分之一（400 次里允许 8% 的随机偏差）。
+    // 三类比例 35:35:30（小动作、嘀咕、小剧场；用户 2026-11-14 改，400 次里允许 8% 的随机偏差）。
     int all = plays.Count + texts.Count + moves.Count;
-    Check(new[] { plays.Count, texts.Count, moves.Count }.All(n => Math.Abs(n - all / 3.0) < all * 0.08), $"move / line / play split evenly: {moves.Count}/{texts.Count}/{plays.Count}");
+    Check(Math.Abs(moves.Count - all * .35) < all * 0.08 && Math.Abs(texts.Count - all * .35) < all * 0.08 && Math.Abs(plays.Count - all * .30) < all * 0.08,
+        $"move / line / play split 35:35:30: {moves.Count}/{texts.Count}/{plays.Count}");
     // 外面发来的事件（hooks）：events.txt 的格式、冷却、不连着演同一条。
     var book = EventBook.Parse(["// 注释", "# 甲 30 优先", "你好|微笑 点头|4", "|看过来", "乱写|乱七八糟的词|2", "# 乙", "只有话", "# 空的", "|"]);
     Check(book.Count == 2 && book["甲"] is { Cooldown: 30, Priority: true } && book["乙"] is { Cooldown: 0, Priority: false }, "event headers: name, cooldown, priority");
