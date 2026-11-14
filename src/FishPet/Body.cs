@@ -256,6 +256,17 @@ internal sealed partial class Body
     // What she wears this way stays on when one of her reflexes, which also used it, ends.
     internal IReadOnlyCollection<string> Overlays => overlays;
     internal bool HandUp => hand != null;
+    // 现在保持着的动作词（眼睛/眉毛/嘴/头/身子/手各一个）：托盘控制台的开关按钮跟着它亮灭（本机加，2026-11-14，用户要的）
+    private readonly Dictionary<string, string> wordOf = [];
+    internal IEnumerable<string> HeldWords
+    {
+        get
+        {
+            var words = wordOf.Where(pair => channels.ContainsKey(pair.Key)).Select(pair => pair.Value).ToList();
+            if (hand is { } up) words.Add(up == HandToChest ? "抚胸" : up == FingerUp ? "竖手指" : "狗尾草");
+            return words;
+        }
+    }
     internal bool Posing => channels.Count > 0 || overlays.Count > 0 || hand != null;
     // 她这会儿用 set 按住不放的参数（音乐律动收工时不去 clear 这些，否则会把她的神情/姿势一起收掉）。
     internal IReadOnlyDictionary<string, double> Shown => shown;
@@ -359,7 +370,7 @@ internal sealed partial class Body
                 : name == "吓一跳" ? StartleBeat : word.Hand != null ? HandBeat : Beat);
             if (word.Reset) Relax();
             foreach (var place in word.Clear ?? []) channels.Remove(place);
-            if (word.Channel is { } channel) channels[channel] = word.Hold!;
+            if (word.Channel is { } channel) { channels[channel] = word.Hold!; wordOf[channel] = name; }
             if (word.Overlay is { } overlay && overlays.Add(overlay)) send($"exp {overlay} 1");
             if (word.HandDown) PutHandDown();
             if (word.Hand is { } up && hand != up) { PutHandDown(); hand = up; send($"motion {up.On}"); }
@@ -370,7 +381,7 @@ internal sealed partial class Body
         if (overlays.Contains("屑屑眼") && channels.TryGetValue("mouth", out var held))
         {
             var cheeks = held.Where(kv => kv.Id == "CheeckPuff").ToArray();
-            if (cheeks.Length == 0) channels.Remove("mouth"); else channels["mouth"] = cheeks;
+            if (cheeks.Length == 0) channels.Remove("mouth"); else { channels["mouth"] = cheeks; wordOf["mouth"] = "鼓腮"; }
         }
         Show();
         return Math.Min(wait, LongestWait);

@@ -23,6 +23,8 @@ public partial class App : System.Windows.Application
     private readonly DispatcherTimer poll = new() { Interval = TimeSpan.FromSeconds(1) };
     private DateTime startedAt = DateTime.UtcNow;
     private DateTime? petGoneSince;
+    private bool keepIcon;
+    private bool? wasHidden;
     private bool petSeen;
 
     internal static void Log(string text)
@@ -155,7 +157,12 @@ public partial class App : System.Windows.Application
         if (tray is not null)
         {
             bool? hidden = panel.Hidden;
-            bool want = hidden == false || panel.IsVisible;
+            // 面板开过的话，她收起（含“收起中…”那几秒）之后点 X，图标都留着，别像退出了一样消失；
+            // 她再次出场（面板没开着）才清掉，之后她收起时又照旧不露面
+            if (panel.IsVisible) keepIcon = true;
+            else if (wasHidden == true && hidden == false) keepIcon = false;
+            wasHidden = hidden;
+            bool want = hidden == false || panel.IsVisible || keepIcon;
             if (tray.Visible != want) Log($"visible {tray.Visible} -> {want} (hidden={hidden?.ToString() ?? "null"}, panel={panel.IsVisible}, pet={Pet.Running})");
             tray.Text = hidden is null ? "大肥鱼（连接中）" : hidden == true ? "大肥鱼 · 收起着" : "大肥鱼 · 在桌面上";
             // 她收着的时候托盘图标也不露面；她出场（或面板还开着）才出现，默认落在“显示隐藏的图标”里

@@ -9,9 +9,23 @@ namespace FishPet;
 // What an agent can do with her, as MCP tools. The descriptions are what the agent reads: plain and complete.
 internal static class Tools
 {
+    // 联接（junction）/符号链接指向同一个文件夹时，管道名要按真实路径算，否则经不同路径启动会各开一条鱼（本机加，2026-11-14）。
+    // FishPet.Mcp 的 Program.cs 里有同样的一份，两边要一致。
+    internal static string RealPath(string path)
+    {
+        try
+        {
+            var start = new System.IO.DirectoryInfo(path.TrimEnd('\\', '/'));
+            for (var dir = start; dir != null; dir = dir.Parent)
+                if (dir.ResolveLinkTarget(true) is { } target)
+                    return System.IO.Path.GetFullPath(System.IO.Path.Combine(target.FullName, System.IO.Path.GetRelativePath(dir.FullName, start.FullName))).TrimEnd('\\', '/');
+        }
+        catch { }
+        return path.TrimEnd('\\', '/');
+    }
     internal static string PipeName => "FishPet." + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "|" +
-        System.IO.Path.GetFullPath(AppContext.BaseDirectory).TrimEnd('\\', '/').ToUpperInvariant()))).Substring(0, 20);
+        RealPath(System.IO.Path.GetFullPath(AppContext.BaseDirectory)).ToUpperInvariant()))).Substring(0, 20);
     internal static object Text(object value) => new { content = new[] { new { type = "text", text = JsonSerializer.Serialize(value) } } };
     internal static object Error(string message) => new { isError = true, content = new[] { new { type = "text", text = message } } };
     // A result with one more piece of text after what it already says.

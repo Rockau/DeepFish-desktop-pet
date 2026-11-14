@@ -1674,7 +1674,7 @@ internal sealed partial class PetWindow : Window
             default:
                 throw new ArgumentException("没有这个操作：" + op);
         }
-        return Tools.Text(new { ok = true, overlays = body.Overlays.Except(poseOverlays).ToArray(), raw = panelRaw.ToArray(), hand = body.HandUp });
+        return Tools.Text(new { ok = true, overlays = body.Overlays.Except(poseOverlays).ToArray(), raw = panelRaw.ToArray(), hand = body.HandUp, held = body.HeldWords.ToArray() });
     }
 
     // 组合神情临时摆一下的收尾：只收回这次临时加的脸上表情和会保持的动作，之前开着的脸上表情不动。
@@ -1705,7 +1705,7 @@ internal sealed partial class PetWindow : Window
         update = updates.Latest is { } found ? new { current = found.Current, latest = found.Latest, behind = found.Behind, changes = found.Changes, guide = found.Guide } : null,
         idle_seconds = settings.IdleSeconds, position = new { Left, Top }, saying = speech.IsSaying, reaction = behavior.Showing, trouble,
         clothes = Outfit.Clothes.Select(item => item.Label).ToArray(), accessories = Outfit.Accessories.Select(item => item.Label).ToArray(),
-        overlays = body.Overlays.Except(poseOverlays).ToArray(), raw = panelRaw.ToArray(), hand = body.HandUp, // 托盘控制台用：脸上开着哪些表情、原版表情、手举着没有
+        overlays = body.Overlays.Except(poseOverlays).ToArray(), raw = panelRaw.ToArray(), hand = body.HandUp, held = body.HeldWords.ToArray(), // 托盘控制台用：脸上开着哪些表情、原版表情、手举着没有
         affection = AffectionState(), focus = FocusState(), memory = MemoryState(), // 亲密度、番茄钟、记忆条数（本机加，2026-11-08）
     };
 
