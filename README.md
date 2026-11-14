@@ -135,6 +135,7 @@
 **上游代码**
 
 - 基于 **WHALEL2D** by **Ssssshaiiko**：[https://github.com/Ssssshaiiko/WHALEL2D](https://github.com/Ssssshaiiko/WHALEL2D)
+- Bilibili视频：BV1zf4A6CEKL
 - 原项目使用与修改已取得作者许可，在此致谢
 
 **角色与模型**
