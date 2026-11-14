@@ -1,6 +1,6 @@
 <h1 align="center">DeepFish：给你的 Agent 一具身体</h1>
 
-<p align="center">让你的 AI 住进桌面上的 Live2D「大肥鱼」：她能汇报Agent的工作简报，有表情动作，待机时会有小动作。<br>陪你专注工作学习、到点催你吃饭睡觉。</p>
+<p align="center">让你的 AI 住进桌面上的 Live2D「大肥鱼」：她能汇报Agent的工作简报，有表情动作，待机时会有小动作。<br>陪你专注工作学习、到点催你吃饭睡觉。(本质上接近传统桌宠）</p>
 
 <p align="center">
   <img src="docs/demo/talking.gif" width="420" alt="大肥鱼在桌面上说话、做表情">
