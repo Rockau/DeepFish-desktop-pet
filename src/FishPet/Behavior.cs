@@ -198,7 +198,8 @@ internal sealed class Behavior
     };
 
     // Measured on her without the headroom the window keeps above her for jumping.
-    private static string SmallZone(double x, double y) => y < .125 ? "head" : y < .215 ? (x is > .3 and < .7 ? "face" : "head")
+    // 脸的下边界 .215 → .245（用户 2026-11-14：点嘴巴、下巴会判成身体，右键也摸不到）：量过，下巴尖约在 .24，.245 刚好压在衣领上沿。
+    private static string SmallZone(double x, double y) => y < .125 ? "head" : y < .245 ? (x is > .3 and < .7 ? "face" : "head")
         : y is > .5 and < .6 && x is < .28 or > .74 ? "hand" : y is > .43 and < .62 ? "skirt"
         : y >= .62 && x is < .36 or > .62 ? "tail" : "body";
 

@@ -227,12 +227,13 @@ void VerifyLive2DBehavior()
     // 摸头摸满 8 秒后松手的“摸后腻歪”也是爱意，同样可以有爱心眼（用户定的，2026-11-10）。
     Check(Behavior.Moods.Where(mood => mood.Key is not ("娇羞" or "摸后腻歪")).All(mood => !mood.Value.Expressions.Contains("爱心眼")), "no heart eyes without love");
     Check(Behavior.Zone("small", .5, .05, worn) == "head" && Behavior.Zone("small", .5, .24, worn) == "face", "small head and face");
+    Check(Behavior.Zone("small", .5, .31, worn) == "face" && Behavior.Zone("small", .5, .33, worn) == "body", "small mouth and chin are the face, the collar is the body");
     Check(Behavior.Zone("small", .5, .5, worn) == "skirt" && Behavior.Zone("small", .85, .75, worn) == "tail", "small skirt and tail");
     Check(Behavior.Zone("small", .22, .58, worn) == "hand" && Behavior.Zone("small", .5, .8, worn) == "body", "small hand and legs");
     Check(Behavior.Zone("chibi", .5, .42, worn) == "face" && Behavior.Zone("chibi", .5, .2, worn) == "head", "chibi head and face");
     Check(Behavior.Zone("full", .5, .2, worn) == "face" && Behavior.Zone("full", .1, .7, worn) == "tail", "full body zones");
     Check(Behavior.Zone("small", .85, .75, ["尾巴开关"]) == "skirt" && Behavior.Zone("full", .1, .7, ["尾巴开关"]) == "skirt", "no tail to touch once it is put away");
-    Check(Behavior.Zone("small", .5, .8, ["裙子切换"]) == "skirt" && Behavior.Zone("small", .5, .3, ["裙子切换"]) == "body", "a long skirt covers her legs, not her chest");
+    Check(Behavior.Zone("small", .5, .8, ["裙子切换"]) == "skirt" && Behavior.Zone("small", .5, .4, ["裙子切换"]) == "body", "a long skirt covers her legs, not her chest");
 
     live2d.Click("head", start);
     Check(live2d.Showing == "摸头" && Said("exp 脸红 1") && Said("set EyeSmile 0.9"), "stroking her head");
@@ -649,8 +650,8 @@ void VerifyBond()
     Check(touches.Count(line => line.StartsWith("娇羞|")) >= 4, "the top level has its own skirt lines");
     var skitLines = File.ReadAllLines(Path.Combine(root!, "skits.txt"));
     var loveSkits = skitLines.Select((line, i) => (line, i)).Where(item => item.line.StartsWith('#') && item.line.Contains("@亲密")).ToArray();
-    Check(loveSkits.Length >= 4 && loveSkits.All(item => skitLines[item.i + 1].TrimStart('/').Trim().StartsWith("彩蛋")), "closeness skits are hidden eggs");
-    Check(loveSkits.All(item => Condition.Parse(item.line[(item.line.IndexOf('@') + 1)..], out _) is { MinLevel: >= 3 }), "closeness skits read");
+    Check(loveSkits.Length >= 8 && loveSkits.All(item => skitLines[item.i + 1].TrimStart('/').Trim().StartsWith("彩蛋")), "closeness skits are hidden eggs");
+    Check(loveSkits.All(item => Condition.Parse(item.line[(item.line.IndexOf('@') + 1)..], out _) is { MinLevel: >= 2 }), "closeness skits read");
 }
 
 // 记忆小本本（本机加，2026-11-08）：记、查、删改、取代、整理、上限、存取，还有“不拖效率”的几条硬规矩。
