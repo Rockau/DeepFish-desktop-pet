@@ -648,7 +648,7 @@ void VerifyBond()
     var root = AppContext.BaseDirectory;
     while (root != null && !File.Exists(Path.Combine(root, "events.txt"))) root = Path.GetDirectoryName(root);
     var book = EventBook.Parse(File.ReadAllLines(Path.Combine(root!, "events.txt")));
-    foreach (var name in new[] { "早安夸奖", "早安", "熬夜念叨", "想你了", "升级", "降级", "番茄开始", "番茄提前结束", "番茄结束", "休息结束", "编译失败", "测试通过", "长任务完成", "该休息" })
+    foreach (var name in new[] { "早安夸奖", "早安", "熬夜念叨", "想你了", "升级", "降级", "番茄开始", "番茄结束1分钟内", "番茄结束5分钟内", "番茄结束10分钟", "番茄结束20分钟", "番茄结束", "休息结束", "编译失败", "测试通过", "长任务完成", "该休息" })
         Check(book.TryGetValue(name, out var def) && def.Lines.Length > 0 && def.Lines.All(line => line.Cue != null), "events.txt has a readable " + name);
     var touches = File.ReadAllLines(Path.Combine(root!, "touch.txt")).Where(line => !line.TrimStart().StartsWith("//") && line.Contains('|')).ToArray();
     Check(touches.Where(line => line.Split('|').Length == 3).All(line => Condition.Parse(line.Split('|')[2], out _) is { MinLevel: > 0 }), "touch.txt levels are read");
