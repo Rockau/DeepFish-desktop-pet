@@ -10,6 +10,7 @@ const BUILD = /\b(dotnet\s+(build|publish|msbuild)|msbuild|npm\s+run\s+build|yar
 const TEST = /(\bdotnet\s+test\b|\.Tests\b|\bpytest\b|python\S*\s+-m\s+(pytest|unittest)|\bnpm\s+(run\s+)?test\b|\byarn\s+test\b|\bpnpm\s+test\b|\bjest\b|\bvitest\b|\bcargo\s+test\b|\bgo\s+test\b|\bmvn\s+test\b|\bgradle\w*\s+test\b)/i
 const FAILED = /(\b[1-9]\d*\s+(failed|failing|errors?)\b|\bFAILED\b|\bFailed!|失败\s*[:：]?\s*[1-9]|Build FAILED|\berror\s+[A-Z]{2,}\d+)/
 const LONG_TASK = 180 * 1000 // 这一轮从用户发消息算起超过 3 分钟算「长任务」
+const THINK_LOAD = 60 * 1000 // 收到消息 1 分钟后这一轮还没做完，演「思考一分钟」（半睁/闭眼/斜眼 + 加载，不带台词；用户 2026-11-14 加）
 const THINK_TIMEOUT = 3 * 60 * 1000 // 收到消息 3 分钟后这一轮还没做完、用户也没再发新消息，算「思考超时」（用户 2026-11-14：30 秒改成 5 分钟又改成 3 分钟，并去掉“没有工具调用”这个条件）
 const NEW_SESSION_GAP = 10 * 1000 // 新会话事件的最小间隔，防止子代理字段认错时连喊
 
@@ -74,12 +75,12 @@ export function apply(ctx, config) {
 
   const disposers = new Map()
   const turnStart = new Map() // agentId -> 用户发消息的时间（毫秒）
-  const thinkTimers = new Map() // agentId -> 思考超时计时器
+  const thinkTimers = new Map() // agentId -> 思考超时计时器（一分钟的和三分钟的两个）
   let lastNewSession = 0
 
   function clearThink(id) {
-    const t = thinkTimers.get(id)
-    if (t) { clearTimeout(t); thinkTimers.delete(id) }
+    for (const t of thinkTimers.get(id) || []) clearTimeout(t)
+    thinkTimers.delete(id)
   }
   function clearAllThink() { for (const id of [...thinkTimers.keys()]) clearThink(id) }
 
@@ -110,10 +111,13 @@ export function apply(ctx, config) {
         void sendEvent('收到')
         // 思考超时：3 分钟后这一轮还没结束就喊一声（只喊一次）；中途调用工具不再取消计时。又来一条新消息会重新计时，这一轮结束（turn-stopping）或出错才取消
         clearThink(agent.id)
-        thinkTimers.set(agent.id, setTimeout(() => {
-          thinkTimers.delete(agent.id)
-          void sendEvent('思考超时')
-        }, THINK_TIMEOUT))
+        thinkTimers.set(agent.id, [
+          setTimeout(() => void sendEvent('思考一分钟'), THINK_LOAD),
+          setTimeout(() => {
+            thinkTimers.delete(agent.id)
+            void sendEvent('思考超时')
+          }, THINK_TIMEOUT),
+        ])
       })
       actx.on('agent/turn-stopping', (payload) => {
         clearThink(agent.id)

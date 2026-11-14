@@ -90,6 +90,8 @@ internal sealed partial class Body
         ["脸红"] = (_, _, _) => new(Overlay: "脸红"), ["黑脸"] = (_, _, _) => new(Overlay: "黑脸"),
         ["冷汗"] = (_, _, _) => new(Overlay: "流冷汗"), ["眼泪"] = (_, _, _) => new(Overlay: "流泪"),
         ["爱心眼"] = (_, _, _) => new(Overlay: "爱心眼"), ["圈圈眼"] = (_, _, _) => new(Overlay: "圈圈眼"),
+        // 加载：脸上转圈的“加载中”小图标（原版表情），思考一分钟的几个动作用（用户 2026-11-14）；-加载 收掉
+        ["加载"] = (_, _, _) => new(Overlay: "加载"),
         ["＞＜"] = (_, _, _) => new(Overlay: "＞＜"), ["><"] = (_, _, _) => new(Overlay: "＞＜"), ["屑屑眼"] = (_, _, _) => new(Overlay: "屑屑眼"),
         ["抚胸"] = (_, _, _) => new(Hand: HandToChest), ["竖手指"] = (_, _, _) => new(Hand: FingerUp),
         ["狗尾草"] = (_, _, _) => new(Hand: Grass), ["放下手"] = (_, _, _) => new(HandDown: true),

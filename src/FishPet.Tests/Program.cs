@@ -110,6 +110,11 @@ void VerifyIdleSelfTalk()
         Check(shipped.TryGetValue(name, out var shippedDef) && shippedDef.Lines.Length > 0, "events.txt has event: " + name);
     foreach (var entry in File.ReadAllLines(Path.Combine(root!, "events.txt")).Where(text => text.Contains('|') && !text.TrimStart().StartsWith("//")))
         Check(Body.CueReadable(entry.Split('|', 3)[1].Trim(), 8), "events.txt cue is readable: " + entry);
+    Check(shipped.TryGetValue("思考一分钟", out var loading) && loading.Rotate && loading.Lines.Length == 3 && loading.Lines.All(line => line.Text.Length == 0 && line.Cue != null && line.Cue.Contains("加载")), "events.txt: three loading moves for the first minute, no words, taking turns");
+    var loadFace = new List<string>(); var loadBody = new Body(loadFace.Add); loadBody.Apply("半睁 加载");
+    Check(loadFace.Contains("exp 加载 1") && loadBody.Overlays.Contains("加载"), "the loading icon is a word of her body");
+    loadBody.Relax();
+    Check(loadFace.Contains("exp 加载 0") && !loadBody.Overlays.Contains("加载"), "and it goes away with the rest when she relaxes");
     Check(shipped["授权"].Priority && !shipped["出错"].Priority && !shipped["完成"].Priority, "only the event that needs her owner is priority");
 
     // Not while she is speaking.
