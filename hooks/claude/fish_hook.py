@@ -10,8 +10,8 @@
 #   PostToolUse Bash 成功               -> 只有测试命令才发：测试通过（输出里看得出有失败的 -> 编译失败）
 #   SessionStart(新开会话)              -> 开工        UserPromptSubmit 你发了消息  -> 收到
 #   SessionStart(接着上次 / 清空重来)   -> 新会话      PostToolUseFailure 被你中断  -> 中断
-#   思考超时：你发了消息 30 秒内，会话记录里没有新动静、最后一条也不是在等工具跑完，就喊一次（每轮最多一次）。
-#     做法：发消息那一刻拉起一个后台小进程（--think）睡 30 秒再看一眼；这一轮已经做完或你又发了新消息，它就悄悄走。
+#   思考超时：你发了消息 5 分钟后，会话记录里没有新动静、最后一条也不是在等工具跑完，就喊一次（每轮最多一次）。
+#     做法：发消息那一刻拉起一个后台小进程（--think）睡 5 分钟再看一眼；这一轮已经做完或你又发了新消息，它就悄悄走。
 # 定时任务（哄睡、午饭提醒）自己开的会话：发出的事件都带 auto，桌宠不把它当成你本人在（不记动静、不加亲密度）。
 # 会话状态（这一轮几点开始、是不是定时任务开的）记在同目录 sessions.json，一天前的自动清掉。
 # 她收着、在说话、冷却没到时桌宠自己会不演（也不会叫她出场），这里不用管。
@@ -59,7 +59,7 @@ API = find_api()
 LOG = HERE / "hook.log"
 SESSIONS = HERE / "sessions.json"
 LONG_TASK = 180  # 秒：这一轮超过这么久才算“长任务”
-THINK_TIMEOUT = 30  # 秒：发消息后这么久没有任何动静，算“思考超时”
+THINK_TIMEOUT = 300  # 秒：发消息后这么久没有任何动静，算“思考超时”（用户 2026-11-14 从 30 秒改成 5 分钟）
 
 # 编译、测试命令（只看 Bash 的命令行）
 BUILD = re.compile(r"\b(dotnet\s+(build|publish|msbuild)|msbuild|npm\s+run\s+build|yarn\s+build|pnpm\s+build|cargo\s+build|go\s+build|make\b|cmake\s+--build|gradle|mvn|tsc\b|vite\s+build|setup\.ps1)", re.I)

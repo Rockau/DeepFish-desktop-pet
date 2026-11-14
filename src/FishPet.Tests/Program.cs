@@ -94,6 +94,14 @@ void VerifyIdleSelfTalk()
     var rnd = new Random(3); string? previous = null; bool repeated = false;
     for (int i = 0; i < 200; i++) { var chosen = eventBook.Choose(yi, rnd).Text; repeated |= chosen == previous; previous = chosen; }
     Check(!repeated, "the same event line is not played twice in a row");
+    // 「轮流」：一轮里每条演一遍不重复，下一轮第一条不和上一轮最后一条相同。
+    var rotating = EventBook.Parse(["# 轮 0 轮流", "一|微笑", "二|微笑", "三|微笑", "四|微笑", "五|微笑"])["轮"];
+    Check(rotating.Rotate, "rotate flag is read from the header");
+    var rotateBook = new EventBook(); var rotateRandom = new Random(11); var played = new List<string>();
+    for (int i = 0; i < 50; i++) played.Add(rotateBook.Choose(rotating, rotateRandom).Text);
+    bool everyRoundFull = Enumerable.Range(0, 10).All(round => played.Skip(round * 5).Take(5).Distinct().Count() == 5);
+    bool noRepeatAcross = Enumerable.Range(1, 49).All(i => played[i] != played[i - 1]);
+    Check(everyRoundFull && noRepeatAcross, "rotating event: every line once per round, never twice in a row");
     Check(!eventBook.TryGet("没有", out _), "an unknown event is not played");
     File.Delete(eventPath);
     // events.txt 本身：每个事件名 hook 脚本都会发来；每句动作都读得懂。
@@ -439,6 +447,8 @@ void VerifyLive2DBehavior()
     Check(alone.Done, "and ends with it");
     // What she says at once is a bubble a line, cues alone on a line going with the words after them.
     Check(Line.Split("〔看过来〕\n好呀〔点头〕\r\n\n  明天见  \n〔眯眼笑〕").SequenceEqual(["〔看过来〕好呀〔点头〕", "明天见〔眯眼笑〕"]), "several lines are several bubbles");
+    Check(Line.Split("甲 / 乙／丙").SequenceEqual(["甲", "乙", "丙"]) && Line.Split("A/B 和 C/D").SequenceEqual(["A/B 和 C/D"]), "slashes split the bubbles, only the full-width one or one with spaces");
+    Check(Line.Split("〔微笑〕 / 你好 / 〔点头〕").SequenceEqual(["〔微笑〕你好〔点头〕"]) && Line.HasSlashBreak("甲 / 乙") && !Line.HasSlashBreak("A/B"), "a slash line of only cues still goes with the words next to it");
     Check(Line.Split("好呀").SequenceEqual(["好呀"]) && Line.Split("〔点头〕").SequenceEqual(["〔点头〕"]), "one line, or cues alone, is one");
 
     var restored = 0;

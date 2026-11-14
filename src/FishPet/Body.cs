@@ -483,11 +483,16 @@ internal sealed class Line
     // What she says in one go, a bubble for each line, said one after the other: she thinks the whole of it through and
     // says it at once, not a line, a pause to think, then the next (the owner, 2026-11-03). A line of nothing but 〔〕
     // goes with the words after it (at the end, before it): her body has no bubble of its own.
+    // 兜底（本机加，2026-11-14）：有的模型（DSH 那边的）照着身体说明里的例子，把几句话用“／”或“ / ”连成一行发来；
+    // 全角“／”、前后带空格的“ / ”当作换行切开（“A/B”这种没空格的不动）。在合并“只有〔〕的行”之前切。
+    private static readonly Regex SlashBreak = new(@"\s*／\s*|\s+/\s+", RegexOptions.Compiled);
+    internal static bool HasSlashBreak(string text) => SlashBreak.IsMatch(text);
+
     internal static List<string> Split(string text)
     {
         var lines = new List<string>();
         string pending = "";
-        foreach (var raw in text.Replace("\r\n", "\n").Split('\n'))
+        foreach (var raw in SlashBreak.Replace(text, "\n").Replace("\r\n", "\n").Split('\n'))
         {
             var line = raw.Trim();
             if (line.Length == 0) continue;

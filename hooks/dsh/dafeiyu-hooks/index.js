@@ -10,7 +10,7 @@ const BUILD = /\b(dotnet\s+(build|publish|msbuild)|msbuild|npm\s+run\s+build|yar
 const TEST = /(\bdotnet\s+test\b|\.Tests\b|\bpytest\b|python\S*\s+-m\s+(pytest|unittest)|\bnpm\s+(run\s+)?test\b|\byarn\s+test\b|\bpnpm\s+test\b|\bjest\b|\bvitest\b|\bcargo\s+test\b|\bgo\s+test\b|\bmvn\s+test\b|\bgradle\w*\s+test\b)/i
 const FAILED = /(\b[1-9]\d*\s+(failed|failing|errors?)\b|\bFAILED\b|\bFailed!|失败\s*[:：]?\s*[1-9]|Build FAILED|\berror\s+[A-Z]{2,}\d+)/
 const LONG_TASK = 180 * 1000 // 这一轮从用户发消息算起超过 3 分钟算「长任务」
-const THINK_TIMEOUT = 30 * 1000 // 收到消息后 30 秒内没有任何工具调用，算「思考超时」
+const THINK_TIMEOUT = 5 * 60 * 1000 // 收到消息后 5 分钟内没有任何工具调用，算「思考超时」（用户 2026-11-14 从 30 秒改成 5 分钟）
 const NEW_SESSION_GAP = 10 * 1000 // 新会话事件的最小间隔，防止子代理字段认错时连喊
 
 export function apply(ctx, config) {
@@ -108,7 +108,7 @@ export function apply(ctx, config) {
       actx.on('agent/inbox/inserted', () => {
         turnStart.set(agent.id, Date.now())
         void sendEvent('收到')
-        // 思考超时：30 秒内没有工具调用、也没结束这一轮，就喊一声（只喊一次）
+        // 思考超时：5 分钟内没有工具调用、也没结束这一轮，就喊一声（只喊一次）
         clearThink(agent.id)
         thinkTimers.set(agent.id, setTimeout(() => {
           thinkTimers.delete(agent.id)

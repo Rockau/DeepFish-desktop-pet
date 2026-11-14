@@ -1438,6 +1438,8 @@ internal sealed partial class PetWindow : Window
                 foreach (var next in bubbles.Skip(1))
                     _ = InTurn(() => { if (!exiting) SayLine(next); return Task.CompletedTask; }, CancellationToken.None);
                 var note = Heard(bubbles);
+                // 兜底切过斜杠就说一声：不然模型下次照样写、永远不知道（本机加，2026-11-14）
+                if (Line.HasSlashBreak(text)) note += "这句里的“／”或“ / ”我按换行分成了几个气泡；下次一句一行，直接换行，别写斜杠。";
                 return Tools.Text(note.Length == 0 ? new { started = true, bubbles = bubbles.Count, said = Body.Strip(text) }
                     : (object)new { started = true, bubbles = bubbles.Count, said = Body.Strip(text), note });
             case "look_in_mirror":
