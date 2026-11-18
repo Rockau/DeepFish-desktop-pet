@@ -10,6 +10,8 @@
 
 > **授权：** 代码采用 **PolyForm Noncommercial 1.0.0**，个人、学习、研究、公益免费，不能商用。模型和 Live2D SDK 不在本仓库里，各遵各的许可。详见[文末](#授权与署名)。
 
+> **新玩法：陪玩陪看（[Fisheye 分支](https://github.com/Rockau/DeepFish-desktop-pet/tree/Fisheye)）** 让大肥鱼看着你的屏幕，陪你打游戏、看番、刷视频、看网页：看懂画面在发生什么，到了精彩、好笑、翻车的地方自己吐槽一两句，看剧会读字幕跟剧情。截图只在本机显卡上看，不上传。托盘里一个开关就能开关，还能调她话多话少。详见[下面](#陪玩陪看fisheye-分支)。
+
 ## 开始使用
 
 只要三步，大部分事情 Agent 替你做。
@@ -52,10 +54,6 @@
 
 </details>
 
-## Fisheye 分支：陪玩陪看
-
-这个分支在原版基础上多了「鱼眼」：大肥鱼会看你最前面的窗口，本机显卡上的视觉模型看懂画面，到了精彩、好笑、翻车的地方自己吐槽一两句，陪你打游戏、看番、刷视频、看网页。托盘「更多设置」里多了单独一栏「陪玩陪看」，有开关和“话多话少”滑块。需要 NVIDIA 显卡（视觉模型约占 8GB 显存）和 DeepSeek API key。安装和说明见 [fisheye/README.md](fisheye/README.md)。
-
 ## 演示
 
 <table align="center">
@@ -94,6 +92,7 @@
 | **陪你过日子** | 番茄钟、到点催你吃饭睡觉、跟着音乐跳舞、给你过生日 |
 | **陪你干活** | 开工、出错、测试通过、做完，她都会在旁边反应，不花 token（可选） |
 | **托盘控制台** | 任务栏的小鲸鱼图标，点开调大小、体型、换衣服，点表情和小剧场看效果 |
+| **陪玩陪看** | 看着你的屏幕陪你打游戏、看视频，看到有意思的地方自己吐槽（[Fisheye 分支](https://github.com/Rockau/DeepFish-desktop-pet/tree/Fisheye)） |
 
 <table align="center">
   <tr>
@@ -109,6 +108,24 @@
 </table>
 
 还有换装、Q 版、小剧场、好几个名字……留给你自己去发现。完整说明见 [功能详解](docs/功能详解.md)。
+
+## 陪玩陪看（Fisheye 分支）
+
+想让大肥鱼陪你一起看屏幕？[**Fisheye 分支**](https://github.com/Rockau/DeepFish-desktop-pet/tree/Fisheye) 给她加了一双「鱼眼」：
+
+- **陪你打游戏**：看得懂战局，打得激烈时只喊大事，翻车、翻盘、打完了才吐槽两句。
+- **陪你看番、看剧**：读字幕跟剧情，虐的地方安静陪着，名场面陪你一起叫。
+- **陪你刷视频、看网页**：笑点、槽点随口接一句；你在干活、聊天时基本不出声。
+- **有分寸**：按场景控制说话节奏，没人理她就慢慢少说，摸她一下又热络起来。托盘「更多设置」里一个开关就能开关，还有“话多话少”滑块。
+- **重隐私**：截图只给本机显卡上的视觉模型（Qwen3-VL）看，不落盘、不上传；发给 DeepSeek 写台词的只有文字描述，像密钥的长串会先打码；微信、QQ 这类聊天软件在前面时完全不看。
+
+需要 NVIDIA 显卡（视觉模型约占 8GB 显存，12GB 以上更稳）和一个 DeepSeek API key。想用的话，拉 Fisheye 分支就行：
+
+```
+git clone -b Fisheye https://github.com/Rockau/DeepFish-desktop-pet "%USERPROFILE%\大肥鱼插件"
+```
+
+已经装了 main 的，在插件文件夹里 `git switch Fisheye`，重新运行一次 `setup.ps1`。鱼眼的安装和用法见分支里的 [fisheye/README.md](https://github.com/Rockau/DeepFish-desktop-pet/blob/Fisheye/fisheye/README.md)。
 
 ## 平时怎么用
 
