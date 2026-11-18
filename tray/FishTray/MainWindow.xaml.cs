@@ -61,6 +61,7 @@ public partial class MainWindow : Window
         public bool Dance { get; set; } // “随音乐摇摆”那一行展开着没有
         public bool Sleep { get; set; } // “睡觉提醒”那一行展开着没有（默认折叠）
         public bool Lunch { get; set; } // “午饭提醒”那一行展开着没有（默认折叠）
+        public bool Eye { get; set; } // “陪玩陪看”那一栏展开着没有（默认折叠，2026-11-18）
         public bool Taskbar { get; set; } = true; // 在任务栏显示面板（默认开，2026-11-18 起）：开了任务栏上有个按钮，面板有最小化键；点 X 仍是收回小托盘
 
         private static string File_ => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "ui.json"));
@@ -142,6 +143,7 @@ public partial class MainWindow : Window
         SearchBox.TextChanged += (_, _) => ApplyFilter();
         SearchClear.Click += (_, _) => { SearchBox.Clear(); SearchBox.Focus(); };
         SizeChanged += (_, _) => { if (!moved && IsVisible) Anchor(); else if (IsVisible) KeepOnScreen(); };
+        InitEye(); // 更多设置里的「陪玩陪看」（MainWindow.Eye.cs）
     }
 
     // 在任务栏显示面板：开了（默认）才有任务栏按钮和最小化键；关着时只在托盘里。
@@ -235,7 +237,7 @@ public partial class MainWindow : Window
     // 把面板渲染成一张 PNG（--shot 自检用）。more：展开“更多设置”；open：三块全展开；scroll：滚到最底
     internal void Snapshot(string path, bool more, bool open = false, bool scroll = false, string search = "")
     {
-        if (more) { MoreToggle.IsChecked = true; MorePanel.Visibility = Visibility.Visible; DanceFold.IsChecked = true; DancePanel.Visibility = Visibility.Visible; }
+        if (more) { MoreToggle.IsChecked = true; MorePanel.Visibility = Visibility.Visible; DanceFold.IsChecked = true; DancePanel.Visibility = Visibility.Visible; EyeFold.IsChecked = true; EyePanel.Visibility = Visibility.Visible; ShowEye(); }
         if (open) foreach (var view in sections) { view.Head.IsChecked = true; view.Body.Visibility = Visibility.Visible; }
         if (search.Length > 0) SearchBox.Text = search;
         UpdateLayout();

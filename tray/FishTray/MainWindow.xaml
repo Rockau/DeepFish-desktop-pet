@@ -332,6 +332,33 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- 陪玩陪看（鱼眼，本机加 2026-11-18）：单独一栏，默认折叠；标题右边小字写着开没开，点开是开关、话量滑块和她现在在看什么 -->
+                        <Border x:Name="EyeCard" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,6" Margin="0,0,0,12">
+                            <StackPanel>
+                                <ToggleButton x:Name="EyeFold" Style="{StaticResource SubFold}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="陪玩陪看" VerticalAlignment="Center"/>
+                                        <StackPanel x:Name="EyeTags" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,0"/>
+                                    </StackPanel>
+                                </ToggleButton>
+                                <StackPanel x:Name="EyePanel" Visibility="Collapsed" Margin="14,0,0,8">
+                                    <Grid Margin="0,6">
+                                        <TextBlock Text="开启陪玩陪看" VerticalAlignment="Center" Foreground="{StaticResource SubBrush}"/>
+                                        <ToggleButton x:Name="SwEye" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <StackPanel x:Name="EyeSliderBox" Margin="0,4,0,4">
+                                        <Grid>
+                                            <TextBlock Text="话多话少" Style="{StaticResource Caption}"/>
+                                            <TextBlock x:Name="EyeSliderValue" Text="" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                        </Grid>
+                                        <Slider x:Name="EyeSlider" Style="{StaticResource StarSlider}" Minimum="0.5" Maximum="2" Value="1" SmallChange="0.1" LargeChange="0.1" TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
+                                        <Grid x:Name="EyeSliderMarks" Height="18"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="EyeNote" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- 最底下：检查更新（动作，不是开关；结果就写在按钮下面） -->
                         <StackPanel Margin="0,0,0,14">
                             <Button x:Name="UpdateButton" Style="{StaticResource Ghost}" Content="检查更新" HorizontalAlignment="Left" Padding="18,7"/>

@@ -52,6 +52,10 @@
 
 </details>
 
+## Fisheye 分支：陪玩陪看
+
+这个分支在原版基础上多了「鱼眼」：大肥鱼会看你最前面的窗口，本机显卡上的视觉模型看懂画面，到了精彩、好笑、翻车的地方自己吐槽一两句，陪你打游戏、看番、刷视频、看网页。托盘「更多设置」里多了单独一栏「陪玩陪看」，有开关和“话多话少”滑块。需要 NVIDIA 显卡（视觉模型约占 8GB 显存）和 DeepSeek API key。安装和说明见 [fisheye/README.md](fisheye/README.md)。
+
 ## 演示
 
 <table align="center">
