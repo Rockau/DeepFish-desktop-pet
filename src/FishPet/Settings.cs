@@ -12,7 +12,7 @@ internal sealed class Settings
     public string Shape { get; set; } = "small";
     public string[] Outfit { get; set; } = [];
     public int Fps { get; set; } = 60;
-    public double Scale { get; set; } = 1;
+    public double Scale { get; set; } = DefaultScale;
     // 立绘清晰度：贴图缩放档位（1 = 高清 4096 原图、0.5 = 标准、0.25 = 流畅）。改档位要重启渲染器才生效。
     public double TexScale { get; set; } = 0.5;
     // Her speech bubble, words and all, apart from her own size.
@@ -65,6 +65,9 @@ internal sealed class Settings
     public double? Left { get; set; }
     public double? Top { get; set; }
 
+    // 大小和位置不记：每次启动都是右下角、1.5 倍（2026-11-19 用户定的）。改大小、拖位置只管这一次运行。
+    internal const double DefaultScale = 1.5;
+
     internal static readonly int[] FpsChoices = [30, 60, 90, 120];
     private static readonly JsonSerializerOptions Format = new() { WriteIndented = true };
 
@@ -73,7 +76,10 @@ internal sealed class Settings
         try
         {
             if (File.Exists(Places.SettingsFile) && JsonSerializer.Deserialize<Settings>(File.ReadAllText(Places.SettingsFile)) is { } loaded)
+            {
+                loaded.Scale = DefaultScale; loaded.Left = loaded.Top = null;
                 return loaded.Checked();
+            }
         }
         catch (Exception error)
         {
