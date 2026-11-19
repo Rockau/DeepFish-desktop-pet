@@ -4,6 +4,7 @@
 // 压缩（/compact、上下文满了自动压）没有自己的 ctx 事件，compaction/* 只写会话日志，
 // 所以挂在 agent.ctx 的 session/event 上，看 compaction/start 与 compaction/end（用户 2026-11-16 加）。
 import { readFile, appendFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 
 export const name = 'dafeiyu-hooks'
 
@@ -19,7 +20,10 @@ const BEAT_AFTER = 60 * 1000 // 一条命令跑这么久还没完，报一次“
 const THINK_TIMEOUT = 3 * 60 * 1000 // 收到消息 3 分钟后这一轮还没做完、用户也没再发新消息，算「思考超时」（用户 2026-11-14：30 秒改成 5 分钟又改成 3 分钟，并去掉“没有工具调用”这个条件）
 
 export function apply(ctx, config) {
-  const apiPath = config?.apiPath // 插件里的 api.json（cordis.patch.yml 里填）
+  // 插件里的 api.json：默认就是插件根目录那个（hooks/dsh/dafeiyu-hooks 往上三层），
+  // 本地目录装的时候这个包是链接到插件文件夹的，所以插件挪了位置也不用改配置；
+  // 真要指别处，再在 cordis.patch.yml 的 config.apiPath 里写一个绝对路径覆盖它。
+  const apiPath = config?.apiPath || fileURLToPath(new URL('../../../api.json', import.meta.url))
   const logPath = new URL('./hook.log', import.meta.url) // 调试用：最近转发了什么、桌宠怎么回的
 
   async function log(msg) {

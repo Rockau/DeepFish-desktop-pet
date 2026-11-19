@@ -2,7 +2,7 @@
 #   powershell -ExecutionPolicy Bypass -File setup.ps1          检查并编译
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 -Check   编译完再开一个看不见的桌宠试一遍（推荐）
 # 缺什么就停下，告诉你缺什么、去哪里拿；不会自己下载 Live2D 的 SDK 或模型（它们要你自己同意各自的许可）。
-#   加 -Hooks 直接接上「干活时的反应」（Claude Code 的 hook，不问）；加 -NoHooks 不接也不问
+#   加 -Hooks 直接接上「干活时的反应」（Claude Code 和 DeepSeek Harness 的 hook，不问）；加 -NoHooks 不接也不问
 param([switch]$Check, [switch]$Hooks, [switch]$NoHooks)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -164,6 +164,38 @@ if (!$NoHooks -and (Test-Path -LiteralPath $installer) -and (Test-Path -LiteralP
         } else {
             Write-Host '没动 Claude 的 settings.json（读不了或格式不对）。想接的话看 AGENTS.md 第 9 步手动加。' -ForegroundColor Yellow
         }
+    }
+}
+
+# 干活时的反应（DeepSeek Harness，可选，AGENTS.md 第 9 步）：把 hooks\dsh\dafeiyu-hooks 当本地插件包装进 DSH 的 profile。
+# 它改的是 DSH 的全局配置，所以交互运行时问一句；-Hooks 直接装，-NoHooks 跳过。
+# 用子进程调：setup 自己是 -ExecutionPolicy Bypass 起来的，用户机器上的策略不一定允许直接跑另一个脚本。
+$dshInstaller = Join-Path $root 'hooks\dsh\install_hooks.ps1'
+$dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
+if (!$NoHooks -and (Test-Path -LiteralPath $dshInstaller) -and (Test-Path -LiteralPath (Join-Path $dshHome 'profiles'))) {
+    $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dshInstaller -Status | Out-Null
+    $state = $LASTEXITCODE
+    $ErrorActionPreference = $previous
+    if ($state -eq 0) {
+        Ok '干活时的反应已经接好了（DeepSeek Harness）'
+    } elseif ($state -eq 3) {
+        $go = $Hooks
+        if (!$go -and [Environment]::UserInteractive -and ![Console]::IsInputRedirected) {
+            Write-Host ''
+            Write-Host '要接上 DeepSeek Harness 的「干活时的反应」吗？你在 DSH 里干活时，她会在旁边演一下：开工、进度、出错、测试通过、做完。' -ForegroundColor Cyan
+            Write-Host '会往 DSH 的 profile 里加一个本地插件包（链接到这个文件夹，不动你原来的插件），不花 token。'
+            $go = (Read-Host '接上？[Y/n]') -notmatch '^\s*[nN]'
+        }
+        if ($go) {
+            $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $dshInstaller | Out-Host
+            $ErrorActionPreference = $previous
+        } else {
+            Write-Host 'DeepSeek Harness 的「干活时的反应」还没接；想接就运行 setup.ps1 -Hooks（或者 hooks\dsh\install_hooks.ps1）。'
+        }
+    } else {
+        Write-Host '没动 DeepSeek Harness 的配置（读不了它的 profile）。想接的话看 AGENTS.md 第 9 步。' -ForegroundColor Yellow
     }
 }
 
