@@ -2,7 +2,8 @@
 #   powershell -ExecutionPolicy Bypass -File setup.ps1          检查并编译
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 -Check   编译完再开一个看不见的桌宠试一遍（推荐）
 # 缺什么就停下，告诉你缺什么、去哪里拿；不会自己下载 Live2D 的 SDK 或模型（它们要你自己同意各自的许可）。
-param([switch]$Check)
+#   加 -Hooks 直接接上「干活时的反应」（Claude Code 的 hook，不问）；加 -NoHooks 不接也不问
+param([switch]$Check, [switch]$Hooks, [switch]$NoHooks)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $root = $PSScriptRoot
@@ -128,6 +129,42 @@ $mcp = Join-Path $root 'bin\FishPet.Mcp.exe'
 if ($Check) {
     & $mcp --check | Out-Host
     if ($LASTEXITCODE -ne 0) { Missing '自检没通过，看上面的输出；还有问题看插件里的 errors.log。' }
+}
+
+# 干活时的反应（可选，AGENTS.md 第 9 步）：把 hooks\claude\fish_hook.py 接进 Claude Code 的 settings.json。
+# 它是 Claude 的全局配置，所以不偷偷改：交互运行时问一句，-Hooks 直接接，-NoHooks 跳过。只往里追加，改之前自动备份。
+$installer = Join-Path $root 'hooks\claude\install_hooks.py'
+if (!$NoHooks -and (Test-Path -LiteralPath $installer) -and (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.claude'))) {
+    $py = $null
+    foreach ($name in 'python', 'py') { $c = Get-Command $name -ErrorAction SilentlyContinue; if ($c) { $py = $c.Source; break } }
+    if (!$py) {
+        Write-Host '想要「干活时的反应」（开工、进度、出错、做完她会在旁边演一下）要先装 Python 3：winget install Python.Python.3.12，装完重新运行 setup.ps1 -Hooks。' -ForegroundColor Yellow
+    } else {
+        $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        & $py -X utf8 $installer --status | Out-Null
+        $state = $LASTEXITCODE
+        $ErrorActionPreference = $previous
+        if ($state -eq 0) {
+            Ok '干活时的反应已经接好了（Claude Code）'
+        } elseif ($state -eq 3) {
+            $go = $Hooks
+            if (!$go -and [Environment]::UserInteractive -and ![Console]::IsInputRedirected) {
+                Write-Host ''
+                Write-Host '要接上「干活时的反应」吗？你用 Claude Code 干活时，她会在旁边演一下：开工、进度、出错、测试通过、做完。' -ForegroundColor Cyan
+                Write-Host '会往 %USERPROFILE%\.claude\settings.json 里追加几条 hook（不动你原来的，改之前自动备份），不花 token。'
+                $go = (Read-Host '接上？[Y/n]') -notmatch '^\s*[nN]'
+            }
+            if ($go) {
+                $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+                & $py -X utf8 $installer | Out-Host
+                $ErrorActionPreference = $previous
+            } else {
+                Write-Host '没有接。以后想接：重新运行 setup.ps1 -Hooks，或者运行 python hooks\claude\install_hooks.py。'
+            }
+        } else {
+            Write-Host '没动 Claude 的 settings.json（读不了或格式不对）。想接的话看 AGENTS.md 第 9 步手动加。' -ForegroundColor Yellow
+        }
+    }
 }
 
 Write-Host ''

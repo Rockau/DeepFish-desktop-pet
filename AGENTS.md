@@ -261,7 +261,7 @@ def run_tool(name: str, arguments: dict) -> dict:
 
 接上以后，你干活时她会在旁边演一小下：开工打招呼、等用户批准时探头、出错冒冷汗、编译失败、测试通过、一轮做完、长任务做完夸他。有任务清单的活，她还会照着清单报进度（一共几步、哪步做完了、接着做哪步、全部做完），命令跑太久会说一声还在跑。全程不经过模型、不花 token；她收着、在说话时不演，也不会因此出场。台词在 `插件\events.txt`。用户想要才接。
 
-- **Claude Code**（命令行和桌面版都读这个）：要装了 Python 3。在 `%USERPROFILE%\.claude\settings.json` 的 `hooks` 里，给 `Notification`、`Stop`、`SubagentStop`、`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`SessionStart`、`UserPromptSubmit`、`PreCompact` 这几个事件各加一条命令 hook（原来有 hooks 的，加进去，别覆盖；`PreToolUse` 那条加上 `"matcher": "Bash"`；`PostToolUse` 加两条，一条 `"matcher": "Bash"`，一条 `"matcher": "TodoWrite|mcp__ccd_turn__update_plan|mcp__ccd_turn__wrap_up"`，用来读任务清单报进度）：
+- **Claude Code**（命令行和桌面版都读这个）：要装了 Python 3。**不用手改：** 用户想要的话，运行 `python 插件\hooks\claude\install_hooks.py`（或 `setup.ps1 -Hooks`；交互运行 `setup.ps1` 时装完也会问一句）就会自动接上：只往 `settings.json` 里追加、不动他原来的 hook，改之前自动备份，重复运行不会重复加，插件挪了位置会把路径改新；加 `--status` 只看状态，`--remove` 拆掉。改完要重启你自己才生效。下面是它做的事，手动加也行：在 `%USERPROFILE%\.claude\settings.json` 的 `hooks` 里，给 `Notification`、`Stop`、`SubagentStop`、`PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`SessionStart`、`UserPromptSubmit`、`PreCompact` 这几个事件各加一条命令 hook（原来有 hooks 的，加进去，别覆盖；`PreToolUse` 那条加上 `"matcher": "Bash"`；`PostToolUse` 加两条，一条 `"matcher": "Bash"`，一条 `"matcher": "TodoWrite|mcp__ccd_turn__update_plan|mcp__ccd_turn__wrap_up"`，用来读任务清单报进度）：
   ```json
   { "hooks": [ { "type": "command", "command": "python \"完整路径\\hooks\\claude\\fish_hook.py\"", "timeout": 6 } ] }
   ```
