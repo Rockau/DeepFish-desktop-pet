@@ -118,7 +118,7 @@ MCP 服务是 `插件\bin\FishPet.Mcp.exe`（stdio，没有参数）。它连上
           args: []
   ```
   插件不能放在 DeepSeek Harness 的工作区里（见第 2 步开头）：那里的程序带着低完整性标签，它拉起的这个服务开不了桌宠，也连不上她，表现是工具一直连不上、大约每分钟重连一次。
-- DeepSeek Harness 也可以不手改上面那个配置，改用现成的插件包 `插件\hooks\dsh\dafeiyu-mcp`，装法见第 9 步里 DeepSeek Harness 那一条。
+- DeepSeek Harness 也可以不手改上面那个配置，改用现成的插件包 `插件\hooks\dsh\dafeiyu-mcp`：装之前先把它 `cordis.patch.yml` 里的 `<插件完整路径>` 换成真实路径（这个 MCP 包没做自动找路径），装法见第 9 步里 DeepSeek Harness 那一条。
 - Cursor 等其他支持 MCP 的 Agent：在它的 MCP 配置里加同样的一条。
 
 能自己改配置就自己改，改不了就把要加的内容和文件位置告诉用户。多半要重启你自己才会生效：告诉用户怎么重启，并说清楚重启后对你说一句“继续装大肥鱼”，你会接着做第 7 步。重启后他不在插件文件夹里跟你聊的话，这句要带上插件文件夹的完整路径，比如“继续装大肥鱼，插件在 D:\大肥鱼插件”。重启回来后，确认你能看到 say、look_in_mirror 这些工具。
@@ -266,7 +266,7 @@ def run_tool(name: str, arguments: dict) -> dict:
   { "hooks": [ { "type": "command", "command": "python \"完整路径\\hooks\\claude\\fish_hook.py\"", "timeout": 6 } ] }
   ```
   脚本自己会找到插件里的 `api.json`；出任何错都静悄悄退出，不影响你干活。调试看同目录的 `hook.log`。改完要重启你自己才生效。
-- **DeepSeek Harness**：把 `插件\hooks\dsh\dafeiyu-hooks` 当插件包装上（它的 `cordis.patch.yml` 里把 `<插件完整路径>` 换成真实路径；安装方式以 DeepSeek Harness 当前版本的插件包说明为准），开个新会话生效。`插件\hooks\dsh\dafeiyu-mcp` 是同样做法的 MCP 接入包，想用插件包而不是改 `cordis.patch.yml` 来接第 6 步时用。
+- **DeepSeek Harness**：把 `插件\hooks\dsh\dafeiyu-hooks` 当本地插件包装上就行（DSH 会把本地目录链接进 profile，**不用再改里面的路径**：`index.js` 自己按这个包的位置找 `插件\api.json`）。装法二选一：① 你自己用 `plugin_manager` 的 `install_bundle`，`target` 填这个文件夹的完整路径；② 运行 `powershell -ExecutionPolicy Bypass -File 插件\hooks\dsh\install_hooks.ps1`（`setup.ps1 -Hooks` 会调它；交互运行 `setup.ps1` 时装完也会问一句）。它会往 profile 的 `package.json` 里加一个 `link:` 依赖、把 bundle 加进选择列表，不动你原来的插件；重复运行不会重复加，插件挪了位置会把链接改新；加 `-Status` 只看状态，`-Remove` 拆掉。装完要重启 DeepSeek Harness 才生效。`插件\hooks\dsh\dafeiyu-mcp` 是同样做法的 MCP 接入包，想用插件包而不是改 `cordis.patch.yml` 来接第 6 步时用。
 - 别的 Agent：有 hook 或事件机制的，照 `hooks\claude\fish_hook.py` 的做法，往 `POST {api.url}/call/event` 发 `{"name": "完成"}` 这样的事件名（带 `Authorization: Bearer <token>` 和 `X-FishTray: 1` 头），事件名见 `events.txt`。进度简报的事件（步骤开始、步骤完成等）还要带 `"vars"`，比如 `{"name": "步骤完成", "vars": {"step": "编译", "next": "测试", "left": "2", "total": "4"}}`，桌宠会把它填进台词里的 `{step}` 这类占位符。
 
 ## 平时怎么用

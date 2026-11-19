@@ -1,6 +1,3 @@
 ﻿- insert:
     - id: dafeiyu-hooks
       name: '@local/dafeiyu-hooks'
-      config:
-        apiPath: '<插件完整路径>\api.json'
-
