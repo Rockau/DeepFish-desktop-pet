@@ -8,7 +8,7 @@ using System.Windows.Threading;
 
 namespace FishTray;
 
-// 任务栏右下角的大肥鱼图标：左键开调控面板，右键菜单（出场/收起、打开面板、退出控制台）。
+// 任务栏右下角的大肥鱼图标：左键开调控面板，右键可开面板和对话。
 // 跟着桌宠走：桌宠一起来它就在，桌宠退场（Agent 断开约 1 分钟后）它也退。
 public partial class App : System.Windows.Application
 {
@@ -117,11 +117,15 @@ public partial class App : System.Windows.Application
         };
         var open = new ToolStripMenuItem("打开面板");
         open.Click += (_, _) => OpenPanel();
+        var talk = new ToolStripMenuItem("语音与对话");
+        talk.Click += (_, _) => panel?.OpenInlineSettings(conversation: true);
+        var touch = new ToolStripMenuItem("触摸区域与动作");
+        touch.Click += (_, _) => panel?.OpenInlineSettings(conversation: false);
         var exit = new ToolStripMenuItem("退出控制台");
         exit.Click += (_, _) => Quit();
 
         var menu = new ContextMenuStrip { ShowImageMargin = false, Renderer = new DarkRenderer(), Font = new Font("Microsoft YaHei UI", 9.5f), Padding = new Padding(4) };
-        menu.Items.AddRange([toggleItem, open, new ToolStripSeparator(), exit]);
+        menu.Items.AddRange([toggleItem, open, talk, touch, new ToolStripSeparator(), exit]);
         menu.Opening += (_, _) =>
         {
             bool? hidden = panel?.Hidden;
@@ -159,10 +163,11 @@ public partial class App : System.Windows.Application
             bool? hidden = panel.Hidden;
             // 面板开过的话，她收起（含“收起中…”那几秒）之后点 X，图标都留着，别像退出了一样消失；
             // 她再次出场（面板没开着）才清掉，之后她收起时又照旧不露面
-            if (panel.IsVisible) keepIcon = true;
+            bool controlsVisible = panel.IsVisible;
+            if (controlsVisible) keepIcon = true;
             else if (wasHidden == true && hidden == false) keepIcon = false;
             wasHidden = hidden;
-            bool want = hidden == false || panel.IsVisible || keepIcon;
+            bool want = hidden == false || controlsVisible || keepIcon;
             if (tray.Visible != want) Log($"visible {tray.Visible} -> {want} (hidden={hidden?.ToString() ?? "null"}, panel={panel.IsVisible}, pet={Pet.Running})");
             tray.Text = hidden is null ? "大肥鱼（连接中）" : hidden == true ? "大肥鱼 · 收起着" : "大肥鱼 · 在桌面上";
             // 她收着的时候托盘图标也不露面；她出场（或面板还开着）才出现，默认落在“显示隐藏的图标”里

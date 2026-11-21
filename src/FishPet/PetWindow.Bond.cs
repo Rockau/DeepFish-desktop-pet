@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace FishPet;
 
@@ -12,9 +14,10 @@ namespace FishPet;
 // 要说的话都写在 events.txt（早安夸奖、熬夜念叨、想你了、升级、降级、番茄开始、番茄结束、休息结束、该休息），改台词不用改代码。
 internal sealed partial class PetWindow
 {
-    private static string AffectionFile => Path.Combine(Places.Root, "affection.json");
-    private readonly Affection affection = Affection.Load(AffectionFile);
+    private static string AffectionFile => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Places.SettingsFile))!, "affection.json");
+    private Affection affection = Affection.Load(AffectionFile);
     private readonly FocusTimer focus = new();
+    private readonly DispatcherTimer focusClock = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly WorkStreak streak = new();
     private readonly MediaPlayer chimePlayer = new();
     private DateTime nextPendingLook;
@@ -23,41 +26,168 @@ internal sealed partial class PetWindow
     private void BondSeen()
     {
         if (test) return;
-        affection.Seen(DateTime.Now);
+        int level = affection.Level;
+        foreach (var change in affection.Seen(DateTime.Now))
+            QueueAffectionReaction(change.Kind, change.LevelBefore);
+        UpdateAffectionReactions(level);
         affection.Save(AffectionFile);
     }
 
-    private void BondGain(string kind)
+    private void BondGain(string kind, bool queueReaction = true)
     {
         if (test) return;
+        int level = affection.Level;
         affection.Apply(kind, DateTime.Now);
+        UpdateAffectionReactions(level);
         affection.Save(AffectionFile);
+        if (queueReaction) QueueAffectionReaction(kind, level);
     }
 
     // 摸头彩蛋（20 秒）：「融化」一天一次 +3；当天用过了就退回普通摸头 +1（还是 60 秒一次）。
     private void BondMelt()
     {
         if (test) return;
-        var change = affection.Apply("融化", DateTime.Now);
-        if (change.Delta == 0)
+        var now = DateTime.Now;
+        int level = affection.Level;
+        var (_, perDay) = affection.Rule(level, "融化");
+        int used = affection.Day == Affection.DayOf(now).ToString("yyyy-MM-dd") ? affection.Counts.GetValueOrDefault("融化") : 0;
+        bool exhausted = perDay > 0 && used >= perDay;
+        if (exhausted)
         {
             if (DateTime.UtcNow - lastStrokeGain <= TimeSpan.FromSeconds(60)) return;
-            affection.Apply("摸头", DateTime.Now);
+            affection.Apply("摸头", now);
         }
+        else affection.Apply("融化", now);
+        UpdateAffectionReactions(level);
         lastStrokeGain = DateTime.UtcNow;
         affection.Save(AffectionFile);
     }
 
-    // 点她之后：先记动静，再按反应加减分（摸头加，戳裙子、挨打扣；满档时戳裙子是“娇羞”，也照扣）。
-    private void BondTouched(string? reaction)
+    private void UpdateAffectionReactions(int previousLevel)
     {
-        BondSeen();
-        switch (reaction)
+        if (previousLevel != affection.Level)
         {
-            case "摸头": BondGain("摸头"); break;
-            case "护裙": case "娇羞": case "娇羞前倾": case "娇羞抚胸": BondGain("戳裙子"); break;
-            case "挨打": BondGain("挨打"); break;
+            behavior.ResetChestPokes();
+            if (affection.Level < Affection.Levels.Length && behavior.Showing == Behavior.HeartEyesChestPoke)
+                behavior.Interrupt();
         }
+        if (NegativeAffection && previousLevel != 0)
+        {
+            Send("exp 脸红 0");
+            if (positiveTouchSpeechToken == mutterToken) YieldMutter();
+            RegradeActiveStroke();
+        }
+        else if (!NegativeAffection && previousLevel == 0)
+        {
+            SetNegativeIdleFace(false, default);
+            if (settings.Outfit.Contains("脸红") || panelRaw.Contains("脸红") || body.Overlays.Contains("脸红"))
+                Send("exp 脸红 1");
+        }
+        SyncOffendedPose();
+    }
+
+    private const int OffendedPoseBelow = -40;
+
+    private static readonly (string Id, double Value)[] OffendedPoseParameters =
+    [
+        // 黑脸与互斥的表情开关。眼镜等穿戴走原来的参数。
+        ("key1", 1), ("key2", 0), ("key3", 0), ("key4", 0), ("key5", 0), ("key6", 0), ("key7", 0), ("key13", 0),
+
+        // 侧目、压眉、抿嘴。最后再覆盖五官的物理输出，避免笑、惊吓或口型改变表情。
+        ("ParamEyeLOpen", .48), ("ParamEyeROpen", .41), ("EyeSmile", 0),
+        ("ParamEyeBallX", -.35), ("ParamEyeBallY", -.13), ("PupilY", 0),
+        ("LEyeSquint", .42), ("REyeSquint", .49),
+        ("ParamBrowLY", -.68), ("ParamBrowRY", -.61), ("BrowInnerUp", 0),
+        ("ParamBrowLAngle", -.77), ("ParamBrowRAngle", -.73),
+        ("ParamBrowLAngleSmoothing", -.72), ("ParamBrowRAngleSmoothing", -.71),
+        ("ParamBrowLY2", -.51), ("ParamBrowRY2", -.45), ("ParamBrowLY3", -.46), ("ParamBrowRY3", -.41),
+        ("ShockL", 0), ("ShockR", 0), ("Press", 0), ("Emotion2", 0),
+        ("LEyes1", 0), ("LEyes2", 0), ("REyes1", 0), ("REyes2", 0),
+        ("LEyeLashX1", 0), ("LEyeLashX2", 0), ("REyeLashX1", 0), ("REyeLashX2", 0),
+        ("LEyeball1", 0), ("LEyeball2", 0), ("LEyeball3", 0), ("REyeball1", 0), ("REyeball2", 0), ("REyeball3", 0),
+        ("LHighLight1", 0), ("LHighLight2", 0), ("LHighLight3", 0), ("RHighLight1", 0), ("RHighLight2", 0), ("RHighLight3", 0),
+        ("LParamGlowA", 0), ("RParamGlowA", 0), ("LParamGlowB", 0), ("RParamGlowB", 0), ("RParamGlowC", 0),
+        ("ParamMouthForm", -.94), ("ParamMouthOpenY", 0), ("JawOpen", 0), ("MouthX", .17),
+        ("MouthPressLipOpen", -.35), ("Mouthpucker", 0), ("MouthFunnel", 0), ("MouthPuckerWiden", 0),
+        ("MouthSmile_L", 0), ("MouthSmile_R", 0), ("MouthRollUpper", 0), ("MouthRollLower", 0), ("TongueOut", 0),
+        ("CheeckPuff", 0), ("CheeckPuff2", 0), ("CheeckPuffR", 0), ("CheeckPuffL", 0),
+        ("CheeksWiggleX", 0), ("CheeksWiggleY", 0), ("CheeksWiggleXL", 0), ("CheeksWiggleXR", 0),
+        ("LipPhysics1", 0), ("LipPhysics2", 0), ("LipPhysics3", 0),
+        ("ParamTongueUpDown", 0), ("ParamTongueWidth", 0),
+        // 眉毛和眼睑也会带起耳朵，遮住笑脸时一起压住这组反应。
+        ("LControl", -.24), ("RControl", -.24),
+        ("LEar1", 0), ("LEar2", 0), ("LEar3", 0), ("REar1", 0), ("REar2", 0), ("REar3", 0),
+
+        // 原模型的单手护胸位置。
+        ("Movement2", 1), ("Param56", 1), ("Param57", 0),
+        ("Param62", .034), ("Param59", .476), ("Param60", .86), ("Param61", .002),
+        ("Movement3", 0), ("Param40", 0), ("Param36", 0), ("Param39", 0),
+        ("Param41", 0), ("Param42", 0), ("Param43", 0)
+    ];
+    private bool offendedPose;
+
+    private void SyncOffendedPose()
+    {
+        bool show = affection.Points < OffendedPoseBelow;
+        if (!ready || player is not { } renderer || show == offendedPose) return;
+        offendedPose = show;
+        foreach (var (id, value) in OffendedPoseParameters)
+            renderer.Send(show ? FormattableString.Invariant($"set pose:{id} {value:0.###}") : $"clear pose:{id}");
+    }
+
+    private static readonly (string Id, double Value)[] NegativeIdleFeatures =
+    [
+        ("EyeOpen", .57), ("LEyeSquint", .23), ("REyeSquint", .31),
+        ("ParamBrowLY", -.44), ("ParamBrowRY", -.38), ("ParamBrowLAngle", -.48), ("ParamBrowRAngle", -.41),
+        ("post:ParamBrowLAngleSmoothing", -.36), ("post:ParamBrowRAngleSmoothing", -.29),
+        ("ParamEyeBallX", -.26), ("ParamEyeBallY", -.12), ("ParamMouthForm", -.72), ("MouthX", .19)
+    ];
+
+    private bool negativeIdleFace;
+    private DateTime? negativeIdleShadeUntil;
+
+    private static bool OverridesIdleFace(string command) =>
+        command.StartsWith("set ", StringComparison.Ordinal) || command.StartsWith("live ", StringComparison.Ordinal) ||
+        command.StartsWith("anim ", StringComparison.Ordinal) || command.StartsWith("animloop ", StringComparison.Ordinal) ||
+        command.StartsWith("motion ", StringComparison.Ordinal) || command.StartsWith("clear ", StringComparison.Ordinal) ||
+        command.StartsWith("exp 黑脸 ", StringComparison.Ordinal) || command.StartsWith("expamount 黑脸 ", StringComparison.Ordinal) ||
+        command == "clearall";
+
+    private void SyncNegativeIdleFace(DateTime now)
+    {
+        bool resting = NegativeAffection && ready && !exiting && !standby && !hiding && !hiddenForFullscreen &&
+            !dragging && !rightDragging && !stroking && !behavior.Touching && afterStroke == null && !Dancing &&
+            behavior.Showing == null && !body.Posing && !panelHold && silent == null && !textIdleActive &&
+            !PlayingImportedCombination && !coaxAutoReturn && !speech.IsSaying && !speech.IsShowingReply && !mutterSpeech.IsSaying;
+        SetNegativeIdleFace(resting, now);
+    }
+
+    private void SetNegativeIdleFace(bool show, DateTime now)
+    {
+        if (player is not { } renderer) return;
+        if (show != negativeIdleFace)
+        {
+            negativeIdleFace = show;
+            foreach (var (id, value) in NegativeIdleFeatures)
+                renderer.Send(show ? FormattableString.Invariant($"set {id} {value:0.###}") : $"clear {id}");
+            if (show && !offendedPose)
+            {
+                negativeIdleShadeUntil = now.AddSeconds(3);
+                renderer.Send("expamount 黑脸 0.65");
+            }
+        }
+        if (negativeIdleShadeUntil is { } until && (!show || now >= until))
+        {
+            negativeIdleShadeUntil = null;
+            renderer.Send("exp 黑脸 0");
+        }
+    }
+
+    private void QueueAffectionReaction(string kind, int level)
+    {
+        var cue = EffectiveAffectionRule(level, kind).Action;
+        if (cue is { Length: > 0 } && affectionReactions.Count < 8 && !affectionReactions.Contains(cue))
+            affectionReactions.Enqueue(cue);
     }
 
     // 外面的事件（hooks）：用户发了消息算聊天；定时任务自己开的会话（auto）不算用户在。返回现在该不该提醒“起来动一动”。
@@ -67,7 +197,7 @@ internal sealed partial class PetWindow
         BondSeen();
         if (name == "收到") BondGain("聊天");
         bool due = streak.Note(DateTime.UtcNow);
-        return due && focus.Now == FocusTimer.Phase.None;
+        return due && focus.Now is FocusTimer.Phase.None or FocusTimer.Phase.Alarm;
     }
 
     // 演 events.txt 里一段她自己要说的话（不经过冷却、不挑忙闲：调用的人自己看时机）。{等级} 换成现在的等级名。
@@ -83,32 +213,61 @@ internal sealed partial class PetWindow
     // 她闲着、露着面的时候，才把攒着的话说出来。
     private bool FreeToTalk => !standby && !hiding && !hiddenForFullscreen && !test && ready && !MutterBlocked && behavior.Showing == null && !body.Posing;
 
-    // 每帧（Tick）看一眼：番茄钟到点了没有、攒着的话能不能说。
-    private void BondTick()
+    // 桌宠收起或被全屏盖住时也要响铃，所以计时与立绘刷新分开。
+    private void FocusTick()
     {
         var now = DateTime.UtcNow;
-        behavior.Quiet = focus.Now == FocusTimer.Phase.Work;
+        bool visible = IsVisible && !standby && !hiding && !hiddenForFullscreen;
         switch (focus.Tick(now))
         {
             case FocusTimer.Turn.WorkDone:
                 Chime(rising: true);
+                behavior.Quiet = false;
                 behavior.Activity("专注", false);
                 BondGain("番茄");
                 YieldMutter();
-                if (!standby) { PlayOwn("番茄结束"); RestSkitLater(); }
+                if (visible) { PlayOwn("番茄结束"); RestSkitLater(); }
                 break;
             case FocusTimer.Turn.BreakDone:
                 Chime(rising: false);
                 streak.Rested(now);
-                if (!standby) { YieldMutter(); PlayOwn("休息结束"); }
+                if (visible) { YieldMutter(); PlayOwn("休息结束"); }
+                break;
+            case FocusTimer.Turn.DeadlineDone:
+                behavior.Quiet = false;
+                behavior.Activity("专注", false);
+                Chime(rising: true);
+                if (visible) { YieldMutter(); _ = SayMutter("专注时间到了，起来活动一下吧。"); DismissTimerBubble(mutterToken); }
+                break;
+            case FocusTimer.Turn.AlarmDone:
+                Chime(rising: true);
                 break;
         }
-        if (now < nextPendingLook || affection.Pending.Count == 0 || focus.Now == FocusTimer.Phase.Work || !FreeToTalk) return;
+        if (focus.Now == FocusTimer.Phase.None) focusClock.Stop();
+    }
+
+    private async void DismissTimerBubble(int token)
+    {
+        await Task.Delay(4000);
+        if (!exiting && token == mutterToken) mutterSpeech.Stop();
+    }
+
+    private void BondTick()
+    {
+        var now = DateTime.UtcNow;
+        if (affectionReactions.Count > 0 && FreeToTalk && focus.Now != FocusTimer.Phase.Work)
+        {
+            var cue = affectionReactions.Dequeue();
+            YieldMutter();
+            PlayTouchCue(cue);
+            return;
+        }
+        if (!CanInitiate || now < nextPendingLook || affection.Pending.Count == 0 || focus.Now == FocusTimer.Phase.Work || !FreeToTalk) return;
         nextPendingLook = now.AddSeconds(3);
         var said = affection.Pending[0];
         affection.Pending.RemoveAt(0);
         affection.Save(AffectionFile);
-        PlayOwn(said);
+        if (PlayOwn(said)) initiativeSpeechToken = mutterToken;
     }
 
     // 专注陪伴正在进行（Work 段）：这时候只剩「摸她」和「工作区进展」会出声，
@@ -129,48 +288,122 @@ internal sealed partial class PetWindow
     {
         int token = mutterToken;
         await Task.Delay(7000);
-        if (exiting || standby || focus.Now != FocusTimer.Phase.Break || speech.IsSaying) return;
-        var plain = skits.Keys.Where(name => !skitConds.ContainsKey(name)).ToArray();
-        if (plain.Length > 0 && (token == mutterToken || !textIdleActive)) PlaySkit(plain[random.Next(plain.Length)], force: true);
+        if (!CanInitiate || exiting || standby || focus.Now != FocusTimer.Phase.Break || speech.IsSaying) return;
+        var plain = autoPlaySkits.Where(name => !skitConds.ContainsKey(name)).ToArray();
+        if (plain.Length > 0 && (token == mutterToken || !textIdleActive))
+        {
+            PlaySkit(plain[random.Next(plain.Length)], force: true);
+            if (SkitOn) initiativeSpeechToken = mutterToken;
+        }
     }
 
-    private object FocusCommand(string action)
+    private object FocusCommand(string action, JsonElement args)
     {
         var now = DateTime.UtcNow;
         switch (action)
         {
             case "start":
-                Wake(); YieldMutter();
-                focus.Start(now);
-                behavior.Quiet = true;
-                behavior.Activity("专注", true);
-                PlayOwn("番茄开始");
+                bool wasWorking = FocusWork;
+                string? mode = args.TryGetProperty("mode", out var requestedMode) && requestedMode.ValueKind != JsonValueKind.String
+                    ? null : Conversation.Text(args, "mode");
+                switch (mode)
+                {
+                    case "":
+                    case "countdown":
+                        int count = args.TryGetProperty("minutes", out _) ? ReadFocusMinutes(args) : settings.FocusMinutes;
+                        if (!SaveFocusMinutes(count)) return Tools.Text(new { error = "专注时长无法保存。" });
+                        focus.Start(now, count);
+                        break;
+                    case "stopwatch":
+                        focus.StartStopwatch(now);
+                        break;
+                    case "deadline":
+                    case "alarm":
+                        if (!TimeOnly.TryParseExact(Conversation.Text(args, "time"), ["H:mm", "HH:mm"], CultureInfo.InvariantCulture,
+                                DateTimeStyles.None, out var time))
+                            throw new ArgumentException("请输入有效的 24 小时时刻，例如 18:30。");
+                        DateTime deadline;
+                        try { deadline = FocusTimer.NextTime(now, time, TimeZoneInfo.Local); }
+                        catch (ArgumentException) { return Tools.Text(new { error = "本地时钟会跳过这个时刻，请另选一个时间。" }); }
+                        focus.StartAt(now, deadline, alarm: mode == "alarm");
+                        break;
+                    default:
+                        throw new ArgumentException("请选择正计时、倒计时、定时结束或闹钟。");
+                }
+                if (FocusWork)
+                {
+                    Wake();
+                    YieldMutter();
+                    behavior.Quiet = true;
+                    behavior.Activity("专注", true);
+                    PlayOwn("番茄开始");
+                }
+                else if (wasWorking)
+                {
+                    behavior.Quiet = false;
+                    behavior.Activity("专注", false);
+                }
+                focusClock.Start();
                 break;
             case "stop":
-                bool working = focus.Now == FocusTimer.Phase.Work;
-                var spent = FocusTimer.Work - focus.Left(now); // 已经专注了多久（用户 2026-11-14：按时长换台词）
-                focus.Stop();
-                behavior.Quiet = false;
-                behavior.Activity("专注", false);
-                if (working && !standby) { YieldMutter(); PlayOwn(spent < TimeSpan.FromMinutes(1) ? "番茄结束1分钟内" : spent < TimeSpan.FromMinutes(5) ? "番茄结束5分钟内" : spent < TimeSpan.FromMinutes(10) ? "番茄结束10分钟" : "番茄结束20分钟"); }
+                bool working = FocusWork;
+                var spent = focus.Elapsed(now);
+                focus.Stop(now);
+                focusClock.Stop();
+                if (working)
+                {
+                    behavior.Quiet = false;
+                    behavior.Activity("专注", false);
+                    if (!standby) { YieldMutter(); PlayOwn(spent < TimeSpan.FromMinutes(1) ? "番茄结束1分钟内" : spent < TimeSpan.FromMinutes(5) ? "番茄结束5分钟内" : spent < TimeSpan.FromMinutes(10) ? "番茄结束10分钟" : "番茄结束20分钟"); }
+                }
+                break;
+            case "duration":
+                if (!SaveFocusMinutes(ReadFocusMinutes(args))) return Tools.Text(new { error = "专注时长无法保存。" });
                 break;
             default:
-                throw new ArgumentException("action 只能是 start（开始专注 25 分钟）或 stop（结束）。");
+                throw new ArgumentException("action 请选择 start（开始）、stop（结束）或 duration（设置时长）。");
         }
         return Tools.Text(FocusState());
     }
 
-    private object FocusState() => new
+    private static int ReadFocusMinutes(JsonElement args)
     {
-        phase = focus.Now switch { FocusTimer.Phase.Work => "work", FocusTimer.Phase.Break => "break", _ => "none" },
-        seconds_left = (int)Math.Ceiling(focus.Left(DateTime.UtcNow).TotalSeconds),
-        seconds_total = (int)focus.Length.TotalSeconds,
-        rounds_today = focus.RoundsToday,
-    };
+        if (!args.TryGetProperty("minutes", out var duration) || duration.ValueKind != JsonValueKind.Number
+            || !duration.TryGetInt32(out int minutes) || minutes is < FocusTimer.MinMinutes or > FocusTimer.MaxMinutes)
+            throw new ArgumentException($"专注时长须为 {FocusTimer.MinMinutes} 到 {FocusTimer.MaxMinutes} 分钟。");
+        return minutes;
+    }
+
+    private bool SaveFocusMinutes(int minutes)
+    {
+        int previous = settings.FocusMinutes;
+        if (minutes == previous) return true;
+        settings.FocusMinutes = minutes;
+        if (settings.TrySave()) return true;
+        settings.FocusMinutes = previous;
+        return false;
+    }
+
+    private object FocusState()
+    {
+        var now = DateTime.UtcNow;
+        return new
+        {
+            phase = focus.Now.ToString().ToLowerInvariant(),
+            mode = focus.Kind.ToString().ToLowerInvariant(),
+            seconds_left = (int)Math.Ceiling(focus.Left(now).TotalSeconds),
+            seconds_total = focus.Now == FocusTimer.Phase.None ? settings.FocusMinutes * 60 : (int)focus.Length.TotalSeconds,
+            seconds_elapsed = (int)focus.Elapsed(now).TotalSeconds,
+            started_at = focus.Started == default ? (DateTime?)null : focus.Started,
+            ends_at = focus.Ends == default ? (DateTime?)null : focus.Ends,
+            minutes = settings.FocusMinutes,
+            rounds_today = focus.RoundsToday,
+        };
+    }
 
     private object AffectionState() => new
     {
-        points = affection.Points, max = Affection.Max, level = affection.Level, name = affection.LevelName,
+        points = affection.Points, min = Affection.Min, max = Affection.Max, level = affection.Level, name = affection.LevelName,
         from = affection.LevelFrom, next = affection.NextAt,
         next_name = affection.Level < Affection.Levels.Length ? Affection.Levels[affection.Level].Name : null,
         today = affection.TodayNet,

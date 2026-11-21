@@ -11,6 +11,7 @@ namespace FishPet;
 // 鼠标和她的实时互动（本机加，2026-11-10）：
 //   · 右键按住在她头上（头 + 整张脸）移动 = 摸头：不播固定动画，每一帧按鼠标的位置驱动头的弹簧，像真的在摸；
 //     头朝着和手相反的方向转、眼睛看着手，靠近两侧单闭眼、摸到脸上闭双眼；鼠标变成一只白手（HandWindow）。
+//   · 右键拖裙摆、腰或脚，以及 Shift + 右键拖脸颊，分别驱动局部互动。
 //   · 左键拖她：按拖动速度实时有惯性（横向甩、竖向拉伸压扁）；转圈或甩得太狠会累积“头晕”，放下后晕一会儿。
 //   · 鼠标在她身上停约 10 秒：做个轻轻的小反应，冷却 30 秒。
 // 台词在 stroke.txt / hover.txt / dizzy.txt（和 touch.txt 同格式，一起读进 touchLines）。
@@ -27,6 +28,13 @@ internal sealed partial class PetWindow
     // k/c 传 0 就用全局那对（其它地方的弹簧照旧）；传了就这一条参数自己用（拖动时的分层弹簧）。
     private void Aim(string id, double target, double k = 0, double c = 0)
     {
+        if (CurrentInteractionAction is { } action && ActionStyleFor(action) is { } style && style != ActionStyle.Default)
+        {
+            target = id == "EyeOpen" ? 1 + (target - 1) * style.Strength : target * style.Strength;
+            double softness = 1.35 - style.Softness * .7;
+            k = (k > 0 ? k : springK) * style.Speed * style.Speed * softness;
+            c = (c > 0 ? c : springC) * style.Speed * Math.Sqrt(softness);
+        }
         if (!springs.TryGetValue(id, out var spring)) springs[id] = spring = new Spring();
         spring.Target = target;
         spring.K = k;
@@ -79,13 +87,23 @@ internal sealed partial class PetWindow
         if (dizzyOn) { StepDizzy(now); busy = true; }
         if (stroking) { StepStroke(dt, now); busy = true; }
         if (dragging && dragged) { StepDrag(dt); busy = true; }
+        if (StepExtraTouch(now)) busy = true;
         bool moving = StepSprings(dt);
         // 松手后等弹簧回稳，再演“摸后”的反应（弹簧和反应都会占同一批参数，不能同时）；最多等 1.5 秒。
-        if (afterStroke != null)
+        if (afterStroke is { } release)
         {
             busy = true;
-            if (stroking || dragging || dizzyOn || behavior.Quiet) { afterStroke = null; if (!stroking && !dizzyOn) behavior.Touching = false; }
-            else if ((!moving && !afterStrokeMelt) || now > afterStrokeAt) PlayAfterStroke();
+            if (stroking || dragging || dizzyOn || behavior.Quiet)
+            {
+                afterStroke = null;
+                afterStrokeMelt = false;
+                if (!stroking && !dizzyOn)
+                {
+                    Face(NoSets, []);
+                    behavior.Touching = false;
+                }
+            }
+            else if ((!moving && release.Mood != HeadStrokeFace.MeltReleaseMood) || now > afterStrokeAt) PlayAfterStroke();
         }
         if (!moving && !busy) touchTimer?.Stop();
     }
@@ -102,15 +120,48 @@ internal sealed partial class PetWindow
     // ---- 脸上的表情（抚摸、头晕共用）：按“想要的”和“现在有的”比，只发有变化的 ----
     private readonly Dictionary<string, double> faceSets = [];
     private readonly HashSet<string> faceExps = [];
+    private readonly Dictionary<string, double> faceExpressionAmounts = [];
 
-    private void Face(IReadOnlyDictionary<string, double> sets, IEnumerable<string> exps)
+    private void Face(IReadOnlyDictionary<string, double> sets, IEnumerable<string> exps, double amount = 1, double? blush = null)
     {
+        var expressionList = exps.ToArray();
+        bool negativeStroke = stroking && strokeLevel == 0;
+        bool strokeDisgust = negativeStroke && expressionList.Contains("黑脸");
+        if ((sets.Count > 0 || expressionList.Length > 0) && CurrentInteractionAction is { } action)
+        {
+            var style = ActionStyleFor(action);
+            amount *= style.Strength;
+            blush *= style.Strength;
+            if (style.Face.Length > 0 && !strokeDisgust)
+            {
+                expressionList = style.Face == "无表情" ? [] : [style.Face];
+                blush = null;
+            }
+            if (style.Strength != 1) sets = sets.ToDictionary(pair => pair.Key,
+                pair => pair.Key == "EyeOpen" ? 1 + (pair.Value - 1) * style.Strength : pair.Value * style.Strength);
+        }
         foreach (var id in faceSets.Keys.Where(id => !sets.ContainsKey(id)).ToArray()) { faceSets.Remove(id); Send($"clear {id}"); }
         foreach (var (id, value) in sets)
             if (!faceSets.TryGetValue(id, out var have) || have != value) { faceSets[id] = value; Send(FormattableString.Invariant($"set {id} {value}")); }
-        var want = exps.ToHashSet();
-        foreach (var name in faceExps.Where(name => !want.Contains(name)).ToArray()) { faceExps.Remove(name); Send($"exp {name} 0"); }
-        foreach (var name in want) if (faceExps.Add(name)) Send($"exp {name} 1");
+        var want = expressionList.ToHashSet();
+        if (NegativeAffection || negativeStroke) want.Remove("脸红");
+        foreach (var name in faceExps.Where(name => !want.Contains(name)).ToArray())
+        {
+            faceExps.Remove(name);
+            faceExpressionAmounts.Remove(name);
+            Send($"exp {name} 0");
+        }
+        foreach (var name in want)
+        {
+            double strength = strokeDisgust && name == "黑脸" ? 1 : name == "脸红" ? blush ?? amount : amount;
+            double weight = Math.Round(ActionStyle.ExpressionAmount(name, strength) * 40) / 40;
+            faceExps.Add(name);
+            if (!faceExpressionAmounts.TryGetValue(name, out var shown) || weight != shown)
+            {
+                faceExpressionAmounts[name] = weight;
+                Send(weight == 1 ? $"exp {name} 1" : FormattableString.Invariant($"expamount {name} {weight:0.###}"));
+            }
+        }
     }
 
     private static readonly Dictionary<string, double> NoSets = [];
@@ -121,8 +172,8 @@ internal sealed partial class PetWindow
     // ================= 右键抚摸（只摸头） =================
     // 只在头和整张脸（Behavior.Zone 的 head / face）上算：右键按在别处没反应。只有头部动，身体不动：
     //   · 头朝着和手相反的方向转（手在右上，脸就朝左下），眼睛却跟着手看过去；
-    //   · 表情是笑眼；手靠近头的右侧单闭右眼，靠近左侧单闭左眼，摸到脸上两只眼都闭上（眯眼笑）；
-    //   · 摸得越久越害羞：3 秒后脸红，8 秒后眉毛和嘴也更害羞（爱心眼已按用户要求去掉，2026-11-11）。
+    //   · 表情按开始抚摸时的好感选档。睁眼表情会在手靠近的一侧眯眼；
+    //   · 反感档久摸会黑脸。其他档有效抚摸越久越脸红，好感越高越早开始，长按可触发融化。
 
     private bool stroking;
     private HandWindow? handWindow;
@@ -134,7 +185,8 @@ internal sealed partial class PetWindow
     private double strokeDeepTime;
     private bool melted, melted30; // melted30：本机加（2026-11-13）满 30 秒的升级版彩蛋，同样锁存到松手
     private DateTime lastStrokeGain = DateTime.MinValue;
-    private string? strokeFace;
+    private (HeadStrokeFace Face, ActionStyle Style)? strokeFace;
+    private int strokeLevel = 1;
     private int strokeSide; // -1 手靠近头的左侧，1 靠近右侧（都是屏幕上的左右），0 在中间；带一点滞后，别在交界处来回抖
     private const double HandSize = .4; // 摸头那只白手的大小：效果图里那只的 40%
 
@@ -142,17 +194,133 @@ internal sealed partial class PetWindow
     {
         zone = null;
         if (!OnHer(local)) return false;
-        zone = Behavior.Zone(Shape.Id, local.X / Width, local.Y / Height, settings.Outfit);
-        return zone is "head" or "face";
+        if (TouchAt(local.X / Width, local.Y / Height, right: true) is not { Gesture: "stroke" } region) return false;
+        zone = region.Id;
+        return true;
     }
 
+    private bool rightDragging;
+    private bool rightMoved;
+    private Point rightDragStart;
+    private TouchRegion? rightDragRegion;
+    private string? rightAffectionEvent;
+
+    private bool ArmRightDrag(TouchRegion region, Point at, bool pinchModifier)
+    {
+        string gesture = RightGesture(region, pinchModifier);
+        if (gesture is not ("skirt" or "waist" or "foot" or "pinch" or "action")) return false;
+        ArmClothesDrag(gesture);
+        BeginExtraTouch(gesture, at, region.Rect);
+        if (afterStroke != null)
+        {
+            afterStroke = null;
+            afterStrokeMelt = false;
+            Face(NoSets, []);
+            AimAllZero();
+            behavior.Touching = false;
+        }
+        hoverZone = null;
+        rightDragRegion = region;
+        rightAffectionEvent = RightGestureAffectionEvent(gesture);
+        recentEditableAction = RegionEditableAction(region, right: true);
+        rightMoved = false;
+        rightDragging = true;
+        return true;
+    }
+
+    private static string RightGesture(TouchRegion region, bool pinchModifier) =>
+        pinchModifier && region.Gesture == "stroke" && region.Id == "face" ? "pinch" : region.Gesture;
+
+    private static string? RightGestureAffectionEvent(string gesture) => gesture switch
+    {
+        "skirt" => "拖裙摆", "foot" => "挠脚", "waist" => "挠腰", "pinch" => "捏脸", _ => null
+    };
+
+    private void RightDragMove(object sender, MouseEventArgs e)
+    {
+        if (!rightDragging) return;
+        if (e.RightButton != MouseButtonState.Pressed) { CancelRightDrag(); return; }
+        GetCursorPos(out var pointer);
+        var position = ScreenDip(pointer);
+        var offset = position - rightDragStart;
+        MoveRightDrag(offset.X, offset.Y);
+        handWindow?.Update(position, DragHandPose());
+        e.Handled = true;
+    }
+
+    private void MoveRightDrag(double dx, double dy)
+    {
+        if (!rightDragging) return;
+        rightMoved |= Math.Abs(dx) + Math.Abs(dy) >= ClothesDragStart;
+        if (MoveClothesDrag(dx, dy)) return;
+        MoveExtraTouch(dx, dy);
+    }
+
+    private void FinishRightDrag()
+    {
+        if (!rightDragging) return;
+        rightDragging = false;
+        var region = rightDragRegion;
+        var kind = rightAffectionEvent;
+        rightDragRegion = null;
+        rightAffectionEvent = null;
+        HideTouchHand();
+        bool clothing = FinishClothesDrag();
+        bool extra = FinishExtraTouch();
+        string? cue = region?.Action;
+        int level = affection.Level;
+        if ((clothing || extra) && kind != null)
+        {
+            BondSeen();
+            level = affection.Level;
+            cue = EffectiveAffectionRule(level, kind).Action ?? cue;
+            BondGain(kind, queueReaction: false);
+        }
+        if ((clothing || extra || rightMoved) && cue is { Length: > 0 })
+        {
+            behavior.ResetChestPokes();
+            CancelExtraTouch();
+            YieldMutter();
+            PlayTouchCue(cue);
+            SayTouch(cue, region?.Box, level);
+        }
+    }
+
+    private void CancelRightDrag()
+    {
+        if (!rightDragging) return;
+        rightDragging = false;
+        rightDragRegion = null;
+        rightAffectionEvent = null;
+        HideTouchHand();
+        CancelClothesDrag();
+        CancelExtraTouch();
+        if (IsMouseCaptured) ReleaseMouseCapture();
+    }
+
+    private TouchRegion? strokeRegion;
     private void StrokeDown(object sender, MouseButtonEventArgs e)
     {
-        if (exiting || standby || stroking || dragging) return;
+        if (exiting || standby || hiding || stroking || dragging || rightDragging) return;
         var at = e.GetPosition(this);
-        if (!OnHead(at, out _)) return; // 只有摸头：别的地方右键不算
+        if (!OnHer(at)) return;
+        if (TouchAt(at.X / Width, at.Y / Height, right: true) is not { Gesture.Length: > 0 } region) return;
+        if (ArmRightDrag(region, at, (Keyboard.Modifiers & ModifierKeys.Shift) != 0))
+        {
+            e.Handled = true;
+            RaiseAboveAll();
+            GetCursorPos(out var press);
+            rightDragStart = ScreenDip(press);
+            if (!CaptureMouse()) CancelRightDrag();
+            else ShowTouchHand(rightDragStart, DragHandPose());
+            return;
+        }
+        if (region.Gesture != "stroke") return;
+        strokeRegion = region;
+        recentEditableAction = "interaction:stroke";
         e.Handled = true;
         RaiseAboveAll();
+        CancelExtraTouch();
         stroking = true;
         strokeTravel = strokeMoving = strokeMaxTime = strokeHeadTime = 0;
         strokeDeepTime = 0; melted = false; melted30 = false; afterStrokeMelt = false;
@@ -160,55 +328,89 @@ internal sealed partial class PetWindow
         afterStroke = null;
         GetCursorPos(out var p);
         strokeLast = ScreenDip(p);
-        CaptureMouse();
+        if (!CaptureMouse())
+        {
+            stroking = false;
+            return;
+        }
         EndDizzy();
+        Face(NoSets, []);
         behavior.Touching = true;
         behavior.Interrupt();
         YieldMutter();
         springK = 150; springC = 14;
-        try
-        {
-            handWindow ??= new HandWindow();
-            handWindow.Update(strokeLast, HandPoseFor(strokeLast));
-            if (!handWindow.IsVisible) handWindow.Show();
-            Mouse.OverrideCursor = Cursors.None; // 手替代了指针；手窗口开不起来就保留一个普通的手形指针
-        }
-        catch (Exception error) { Places.Log("摸头的手开不起来：" + error.Message); Mouse.OverrideCursor = Cursors.Hand; }
+        ShowTouchHand(strokeLast, HandPoseFor(strokeLast));
         BondSeen();
-        Happened("stroke_start", new { });
+        strokeLevel = affection.Level;
+        Happened("stroke_start", new { zone = region.Id });
         StartTouchTimer();
     }
 
     private void StrokeUp(object sender, MouseButtonEventArgs e)
     {
+        if (rightDragging)
+        {
+            e.Handled = true;
+            try { FinishRightDrag(); }
+            finally { if (IsMouseCaptured) ReleaseMouseCapture(); }
+            return;
+        }
         if (!stroking) return;
         e.Handled = true;
         EndStroke();
     }
 
-    // 松手后的反应：摸了多久分三档（3 秒、8 秒），20 秒是彩蛋「摸后融化」。脸都会红一下。
+    // 按好感和抚摸时长选择松手反应，脸红接续松手时的状态。
     private (string Mood, string Key)? afterStroke;
     private DateTime afterStrokeAt;
     private bool afterStrokeBond, afterStrokeMelt;
+    private double afterStrokeBlush;
+
+    // 好感降到反感时，已经在摸或还等着播放的收尾也随之换档。
+    private void RegradeActiveStroke()
+    {
+        if (!stroking && afterStroke == null) return;
+        strokeLevel = 0;
+        strokeFace = null;
+        melted = melted30 = afterStrokeMelt = false;
+        afterStrokeBlush = 0;
+        if (afterStroke == null) return;
+        var release = HeadStrokeFace.ReleaseAt(0, Math.Max(strokeMaxTime, strokeDeepTime), 0);
+        afterStroke = release;
+        Face(NoSets, release.Mood == HeadStrokeFace.NegativeReleaseMood ? ["黑脸"] : []);
+    }
 
     private void EndStroke()
     {
         if (!stroking) return;
         stroking = false;
         if (IsMouseCaptured) ReleaseMouseCapture();
-        Mouse.OverrideCursor = null;
-        handWindow?.Hide();
+        HideTouchHand();
+        afterStrokeBlush = strokeFace != null ? faceExpressionAmounts.GetValueOrDefault("脸红") : 0;
         strokeFace = null;
         double held = strokeMaxTime;
         // 只有真的摸了几下才有“摸后”的反应（按下去没动不算）。
         bool touched = strokeTravel > 8 && strokeMoving >= .4 && !dizzyOn;
-        Happened("stroke_end", new { seconds = Math.Round(strokeMoving, 1), stage = melted ? 4 : held >= 8 ? 3 : held >= 3 ? 2 : 1 });
-        if (melted)
+        Happened("stroke_end", new { seconds = Math.Round(strokeMoving, 1), stage = melted ? 4 : held >= 8 ? 3 : held >= 3 ? 2 : 1,
+            affectionLevel = strokeLevel, blush = afterStrokeBlush });
+        if (!touched && !melted)
+        {
+            strokeRegion = null;
+            Face(NoSets, []);
+            AimAllZero();
+            springK = 200; springC = 28;
+            if (!dizzyOn) behavior.Touching = false;
+            return;
+        }
+        // 摸头加亲密度最多 60 秒一次，摸得太短（不到 1.2 秒）不加。触发彩蛋后保留原有加分事件。
+        afterStrokeBond = strokeMoving >= 1.2;
+        afterStrokeMelt = melted;
+        string? meltLine = melted ? (melted30 ? "抚摸头5" : "抚摸头4") : null;
+        var release = HeadStrokeFace.ReleaseAt(strokeLevel, held, random.NextDouble(), meltLine);
+        afterStroke = release;
+        if (release.Mood == HeadStrokeFace.MeltReleaseMood)
         {
             // 彩蛋：不断档。眯眼笑、前倾、歪头都保留，只让头和眼珠慢慢回正，0.8 秒后进「摸后融化」。
-            afterStroke = ("摸后融化", melted30 ? "抚摸头5" : "抚摸头4"); // 30 秒以上：动作同 20 秒，只换那句台词（多一个爱心眼）
-            afterStrokeMelt = true;
-            afterStrokeBond = strokeMoving >= 1.2;
             afterStrokeAt = DateTime.UtcNow.AddSeconds(.8);
             springK = 90; springC = 9;
             foreach (var id in new[] { "FaceAngleX", "FaceAngleY", "FaceAngleZ", "ParamEyeBallX", "ParamEyeBallY" })
@@ -216,21 +418,12 @@ internal sealed partial class PetWindow
             StartTouchTimer();
             return;
         }
-        if (!touched)
-        {
-            Face(NoSets, []);
-            AimAllZero();
-            springK = 200; springC = 28;
-            if (!dizzyOn) behavior.Touching = false;
-            return;
-        }
-        Face(NoSets, ["脸红"]); // 脸红一路带到摸后的反应里，中间不褪
+        string[] lingering = release.Mood == HeadStrokeFace.NegativeReleaseMood ? ["黑脸"]
+            : afterStrokeBlush > 0 ? ["脸红"] : [];
+        Face(NoSets, lingering, blush: afterStrokeBlush);
         AimAllZero();
         springK = 200; springC = 28; // 松手后头很快回正（临界阻尼），再接摸后的反应
         behavior.Touching = false;
-        // 摸头加亲密度最多 60 秒一次，别按着刷分；摸得太短（不到 1.2 秒）不加。
-        afterStrokeBond = strokeMoving >= 1.2;
-        afterStroke = held >= 8 ? ("摸后腻歪", "抚摸头3") : held >= 3 ? ("摸后不舍", "抚摸头2") : ("摸后失落", "抚摸头1");
         afterStrokeAt = DateTime.UtcNow.AddSeconds(1.5);
         StartTouchTimer();
     }
@@ -240,10 +433,26 @@ internal sealed partial class PetWindow
         var (mood, key) = afterStroke!.Value;
         afterStroke = null;
         behavior.Touching = false;
-        KeepLean(); // 前倾交给表情用 set 接着，别在这里清掉（清掉时旧值淡出会和表情叠加，看着会突然点一下头）
+        string kind = afterStrokeMelt ? "融化" : "摸头";
+        int releaseLevel = affection.Level;
+        var cue = StrokeReleaseCue(releaseLevel, kind, strokeRegion);
+        var box = strokeRegion?.Box;
+        strokeRegion = null;
+        if (cue == null) KeepLean(); // 前倾交给默认表情接着
+        else if (cue.Length == 0) AimAllZero();
         Face(NoSets, []);
-        YieldMutter();
-        behavior.Show(mood, DateTime.UtcNow, force: true);
+        if (cue == null)
+        {
+            var action = behavior.Action(mood);
+            double blush = Math.Min(afterStrokeBlush, action.BlushStrength ?? action.ExpressionStrength);
+            YieldMutter();
+            behavior.Show(mood, DateTime.UtcNow, force: true, preview: action with { BlushStrength = blush });
+        }
+        else if (cue.Length > 0)
+        {
+            YieldMutter();
+            PlayTouchCue(cue);
+        }
         if (afterStrokeMelt)
         {
             afterStrokeMelt = false;
@@ -252,25 +461,9 @@ internal sealed partial class PetWindow
         else if (afterStrokeBond && DateTime.UtcNow - lastStrokeGain > TimeSpan.FromSeconds(60))
         {
             lastStrokeGain = DateTime.UtcNow;
-            BondGain("摸头");
+            BondGain("摸头", queueReaction: false);
         }
-        if (!speech.IsSaying) SayTouch(key);
-    }
-
-    // 脸：side 是手靠近头的哪一侧（屏幕上的），face 为 true 表示手在脸上；t 是摸了多久（秒）。
-    // melt 是 17–20 秒的融化渐变（0→1）：笑眼慢慢合上变成眯眼笑、身体前倾（本机加，2026-11-11）。
-    // 单闭哪只眼：ParamEyeLOpen 是模型的左眼，在屏幕的右边，所以手在屏幕右侧就闭它。
-    private static (Dictionary<string, double> Sets, string[] Exps) StrokeFace(int side, bool face, double t, double melt)
-    {
-        double open = .45 * (1 - melt);                                 // 笑眼慢慢合上，最后是眯眼笑（EyeOpen 0）
-        var sets = new Dictionary<string, double> { ["EyeSmile"] = 1, ["ParamMouthForm"] = 1 };
-        if (face) sets["EyeOpen"] = 0;                                  // 摸到脸上：双眼闭上，眯眼笑
-        else if (side > 0) { sets["EyeOpen"] = open; sets["ParamEyeLOpen"] = 0; }   // 靠近右侧：单闭右眼，另一只笑眼
-        else if (side < 0) { sets["EyeOpen"] = open; sets["ParamEyeROpen"] = 0; }   // 靠近左侧：单闭左眼
-        else sets["EyeOpen"] = open;                                    // 其他：笑眼
-        if (melt > 0) sets["LeanInput"] = -17 * melt;                   // 融化时身体往前靠（用户定 -17，2026-11-11）
-        if (t >= 8) { sets["BrowInnerUp"] = .5; sets["MouthPressLipOpen"] = .4; }
-        return (sets, t >= 3 ? ["脸红"] : []);
+        if (cue != "" && !speech.IsSaying) SayTouch(cue ?? key, box, cue == null ? strokeLevel : releaseLevel);
     }
 
     private void StepStroke(double dt, DateTime now)
@@ -290,19 +483,19 @@ internal sealed partial class PetWindow
         if (moving) { strokeMoving += dt; strokeHeadTime += dt; }
         else strokeHeadTime = Math.Max(0, strokeHeadTime - dt * .25);
         if (!onHead) strokeHeadTime = Math.Max(0, strokeHeadTime - dt); // 手离开了头，害羞的程度也退下去
-        strokeMaxTime = Math.Max(strokeMaxTime, strokeHeadTime);
-
         // 20 秒彩蛋：单独一条更宽容的计时（速度 25 就算、停手只退 0.1/秒），和上面的旧计时互不影响。
         bool deepMoving = engaged && onHead && speed > 25;
         if (deepMoving) strokeDeepTime += dt;
         else if (onHead) strokeDeepTime = Math.Max(0, strokeDeepTime - dt * .1);
         else strokeDeepTime = Math.Max(0, strokeDeepTime - dt);
-        if (!melted && strokeDeepTime >= 20) melted = true;
-        if (!melted30 && strokeDeepTime >= 30) melted30 = true;
-        double melt = melted ? 1 : Math.Clamp((strokeDeepTime - 17) / 3, 0, 1);
+        bool canMelt = strokeLevel > 0;
+        strokeMaxTime = Math.Max(strokeMaxTime, canMelt ? strokeHeadTime : strokeDeepTime);
+        if (canMelt && strokeDeepTime >= 20) melted = true;
+        if (canMelt && strokeDeepTime >= 30) melted30 = true;
+        double melt = !canMelt ? 0 : melted ? 1 : Math.Clamp((strokeDeepTime - 17) / 3, 0, 1);
         melt = Math.Round(melt * 30) / 30; // 每帧只发有变化的几个值，30 档够平滑
 
-        var box = Behavior.HeadBox(Shape.Id);
+        var box = StrokeHeadBox();
         double hx = Left + Width * box.X, hy = Top + Height * box.Y, rx = Width * box.Rx, ry = Height * box.Ry;
         double ux = Math.Clamp((cur.X - hx) / rx, -1.3, 1.3), uy = Math.Clamp((cur.Y - hy) / ry, -1.3, 1.3);
 
@@ -314,9 +507,15 @@ internal sealed partial class PetWindow
 
         if (melted || (engaged && onHead))
         {
-            var (sets, exps) = StrokeFace(strokeSide, zone == "face" && strokeSide == 0, strokeHeadTime, melt);
-            string key = string.Join(',', sets.Select(pair => pair.Key + pair.Value)) + "|" + string.Join(',', exps);
-            if (key != strokeFace) { strokeFace = key; Face(sets, exps); }
+            double elapsed = canMelt ? strokeHeadTime : strokeMaxTime;
+            var pose = HeadStrokeFace.At(strokeLevel, strokeSide, zone == "face" && strokeSide == 0, elapsed, melt);
+            var state = (pose, ActionStyleFor("interaction:stroke"));
+            if (strokeFace != state)
+            {
+                strokeFace = state;
+                var (parameters, expressions) = pose.Build();
+                Face(parameters, expressions, blush: pose.Blush);
+            }
         }
         else if (strokeFace != null) { strokeFace = null; Face(NoSets, []); }
 
@@ -333,10 +532,40 @@ internal sealed partial class PetWindow
         handWindow?.Update(cur, HandPoseFor(cur));
     }
 
+    private void ShowTouchHand(Point position, HandPose pose)
+    {
+        if (test) return;
+        try
+        {
+            handWindow ??= new HandWindow();
+            handWindow.Update(position, pose);
+            if (!handWindow.IsVisible) handWindow.Show();
+            Mouse.OverrideCursor = Cursors.None;
+        }
+        catch (Exception error)
+        {
+            Places.Log("触摸小手无法显示：" + error.Message);
+            Mouse.OverrideCursor = Cursors.Hand;
+        }
+    }
+
+    private void HideTouchHand()
+    {
+        Mouse.OverrideCursor = null;
+        handWindow?.Hide();
+    }
+
+    private HandPose DragHandPose() => new(-40 * Math.PI / 180, HandSize * Math.Clamp(Width / 340, .7, 1.6), 1, 0, 0, 0);
+
+    private (double X, double Y, double Rx, double Ry) StrokeHeadBox() =>
+        strokeRegion is { Id: not ("head" or "face"), Rect: { } box }
+            ? (box.X + box.Width / 2, box.Y + box.Height / 2, box.Width / 2, box.Height / 2)
+            : TouchHeadBox();
+
     // 手的姿态：按鼠标相对头部椭圆的位置倾斜，掌心朝头部中心；指尖朝左上约 40°，在头的左右两侧略跟着转。
     private HandPose HandPoseFor(Point cur)
     {
-        var box = Behavior.HeadBox(Shape.Id);
+        var box = StrokeHeadBox();
         double hx = Left + Width * box.X, hy = Top + Height * box.Y, rx = Width * box.Rx, ry = Height * box.Ry;
         double ux = (cur.X - hx) / rx, uy = (cur.Y - hy) / ry;
         double r = Math.Min(Math.Sqrt(ux * ux + uy * uy), 1.05);
@@ -443,7 +672,7 @@ internal sealed partial class PetWindow
         Face(sets, level >= DizzyHigh ? ["圈圈眼", "流冷汗"] : ["圈圈眼"]);
         StartTouchTimer();
         YieldMutter();
-        SayTouch(level >= DizzyHigh ? "头晕重" : "头晕中");
+        SayTouch(level >= DizzyHigh ? "头晕重" : "头晕中", dragTouchBox);
     }
 
     private void StepDizzy(DateTime now)
@@ -474,35 +703,51 @@ internal sealed partial class PetWindow
     // ================= 鼠标停在她身上：小反应 =================
 
     private string? hoverZone;
+    private bool hoverPlayed;
     private DateTime hoverSince, hoverCooldownUntil;
     private static readonly TimeSpan HoverAfter = TimeSpan.FromSeconds(10), HoverCooldown = TimeSpan.FromSeconds(30);
 
     private void HoverMove(object sender, MouseEventArgs e)
     {
-        if (dragging || stroking || dizzyOn) { hoverZone = null; return; }
+        if (dragging || rightDragging || stroking || dizzyOn) { hoverZone = null; return; }
         var at = e.GetPosition(this);
         if (VisualTreeHelper.HitTest(image, at) == null) { hoverZone = null; return; }
-        var zone = Behavior.Zone(Shape.Id, at.X / Width, at.Y / Height, settings.Outfit);
-        if (zone != hoverZone) { hoverZone = zone; hoverSince = DateTime.UtcNow; }
+        var hit = TouchAt(at.X / Width, at.Y / Height, right: false);
+        var zone = hit?.Hover == "" ? null : hit?.Id;
+        if (zone != hoverZone) { hoverZone = zone; hoverSince = DateTime.UtcNow; hoverPlayed = false; }
     }
 
     private void HoverTick()
     {
-        if (hoverZone == null || test) return;
+        if (hoverZone == null || hoverPlayed || test) return;
         var now = DateTime.UtcNow;
         if (now - hoverSince < HoverAfter || now < hoverCooldownUntil) return;
-        if (dragging || stroking || dizzyOn || behavior.Quiet || !FreeToTalk || !IsVisible) return;
+        if (dragging || rightDragging || stroking || dizzyOn || behavior.Quiet || !FreeToTalk || !IsVisible) return;
         // 鼠标可能已经走了、窗口没收到离开：再看一眼它现在在不在她身上。
         GetCursorPos(out var p);
         var cur = ScreenDip(p);
         var local = new Point(cur.X - Left, cur.Y - Top);
-        if (!OnHer(local)) { hoverZone = null; return; }
+        if (!OnHer(local) || TouchAt(local.X / Width, local.Y / Height, right: false) is not { } hit
+            || hit.Id != hoverZone || hit.Hover == "") { hoverZone = null; return; }
         hoverCooldownUntil = now + HoverCooldown;
-        hoverSince = now;
+        hoverPlayed = true;
+        HoverTouchRegion(hit, now, local.X < Width / 2 ? 1 : -1);
+    }
+
+    private void HoverTouchRegion(TouchRegion region, DateTime now, int side)
+    {
         YieldMutter();
-        behavior.Show(Behavior.HoverMood(hoverZone), now, local.X < Width / 2 ? 1 : -1);
-        SayTouch(behavior.Showing);
-        Happened("hover", new { zone = hoverZone, reaction = behavior.Showing });
+        var cue = region.Hover;
+        if (string.IsNullOrWhiteSpace(cue)) behavior.Show(Behavior.HoverMood(region.Id, affection.Level), now, side);
+        else PlayTouchCue(cue, side);
+        if (behavior.Showing is { } actionName) recentEditableAction = actionName;
+        if (CanInitiate)
+        {
+            initiativeMotion = behavior.MotionRevision;
+            initiativeSpeechToken = mutterToken;
+            SayTouch(cue ?? behavior.Showing, region.Box);
+        }
+        Happened("hover", new { zone = region.Id, reaction = behavior.Showing ?? cue });
     }
 
     // 关闭时收拾干净：别让指针一直藏着。

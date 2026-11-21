@@ -287,7 +287,7 @@ ComPtr<ID3D11ShaderResourceView> LoadTexture(ID3D11Device* device, ID3D11DeviceC
 struct Expression
 {
     csmVector<CubismExpressionMotion::ExpressionParameter> parameters;
-    float weight = 0, fade = 0.5f;
+    float weight = 0, amount = 1, fade = 0.5f;
     bool on = false;
 };
 
@@ -490,7 +490,8 @@ public:
         {
             Expression& expression = entry.second;
             float step = dt / expression.fade;
-            expression.weight = expression.on ? std::min(1.0f, expression.weight + step) : std::max(0.0f, expression.weight - step);
+            float target = expression.on ? expression.amount : 0.0f;
+            expression.weight += std::clamp(target - expression.weight, -step, step);
             if (expression.weight <= 0) continue;
             for (csmUint32 i = 0; i < expression.parameters.GetSize(); i++)
             {
@@ -543,6 +544,8 @@ public:
 
         // Held values ease in and out like her expressions, or a mood would snap on and off.
         std::vector<std::pair<std::string, Hold*>> heldParameters;
+        std::vector<std::pair<std::string, Hold*>> poseOverrides;
+        std::vector<std::pair<std::string, float>> postPhysics;
         float heldX = 0, heldY = 0, heldRoll = 0, heldSquash = 0; // 本机加：View* 也能用 set/live 一直按住（右键抚摸、拖拽惯性实时驱动整个身体）
         for (auto hold = holds.begin(); hold != holds.end();)
         {
@@ -556,6 +559,8 @@ public:
             else if (hold->first == "ViewY") heldY += entry.value * entry.weight;
             else if (hold->first == "ViewRoll") heldRoll += entry.value * entry.weight;
             else if (hold->first == "ViewSquash") heldSquash += entry.value * entry.weight;
+            else if (hold->first.rfind("post:", 0) == 0) postPhysics.emplace_back(hold->first.substr(5), entry.value * entry.weight);
+            else if (hold->first.rfind("pose:", 0) == 0) poseOverrides.emplace_back(hold->first.substr(5), &entry);
             else if (!lid(hold->first, 1 + (entry.value - 1) * entry.weight)) heldParameters.push_back({ hold->first, &entry });
             ++hold;
         }
@@ -587,6 +592,7 @@ public:
             else if (track->id == "ViewY") bodyY += value;
             else if (track->id == "ViewRoll") bodyRoll += value;
             else if (track->id == "ViewSquash") bodySquash += value;
+            else if (track->id.rfind("post:", 0) == 0) postPhysics.emplace_back(track->id.substr(5), value);
             else if (!lid(track->id, 1 + value)) movedParameters.push_back({ track->id, value });
             if (track->id == "ParamEyeLOpen" || track->id == "ParamEyeROpen") eyeAnim = true;
             ++track;
@@ -630,6 +636,10 @@ public:
         }
 
         _updateScheduler.OnLateUpdate(_model, dt);
+        // Local touch and imported curves can add to selected physics outputs for this frame.
+        for (const auto& [id, value] : postPhysics) _model->AddParameterValue(ids->GetId(id.c_str()), value);
+        // A relationship pose can hold selected parts in place while ordinary actions keep playing underneath.
+        for (const auto& [id, hold] : poseOverrides) _model->SetParameterValue(ids->GetId(id.c_str()), hold->value, hold->weight);
         _model->Update();
     }
 
@@ -656,11 +666,12 @@ public:
         renderer->EndFrame();
     }
 
-    bool SetExpression(const std::string& name, bool on)
+    bool SetExpression(const std::string& name, bool on, float amount = 1)
     {
         auto entry = expressions.find(name);
         if (entry == expressions.end()) return false;
         entry->second.on = on;
+        entry->second.amount = std::clamp(amount, 0.0f, 1.0f);
         return true;
     }
     void ClearExpressions() { for (auto& entry : expressions) entry.second.on = false; }
@@ -887,6 +898,11 @@ void Exec(const std::string& line, Pet& pet, View& view)
     std::string command, a, b, c;
     input >> command >> a >> b >> c;
     if (command == "exp") { if (!pet.SetExpression(a, b != "0")) fprintf(stderr, "没有这个表情: %s\n", a.c_str()); }
+    else if (command == "expamount")
+    {
+        float amount = static_cast<float>(atof(b.c_str()));
+        if (!pet.SetExpression(a, amount > 0, amount)) fprintf(stderr, "没有这个表情: %s\n", a.c_str());
+    }
     else if (command == "motion") { if (!pet.PlayMotion(a)) fprintf(stderr, "没有这个动作: %s\n", a.c_str()); }
     // A held value that is already showing moves over to the new one instead of jumping there.
     else if (command == "set")

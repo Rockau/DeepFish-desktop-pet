@@ -11,4 +11,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\DeepFish.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../tray/FishTray/Catalog.cs" Link="Catalog.cs" />
+  </ItemGroup>
 </Project>

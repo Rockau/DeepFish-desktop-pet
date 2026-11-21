@@ -58,6 +58,7 @@ internal sealed class BubbleWindow : Window
 
     // 开发用录制里这个气泡叫什么（"speech" / "mutter"），null 就不录。
     internal string? RecordAs { get; init; }
+    internal event Action? Dismissed;
 
     internal BubbleWindow(Window pet, Func<double> headTop)
     {
@@ -76,7 +77,7 @@ internal sealed class BubbleWindow : Window
         pet.LocationChanged += (_, _) => Place();
         pet.SizeChanged += (_, _) => Place();
         // A click on the bubble closes it.
-        MouseLeftButtonUp += (_, _) => Hide();
+        MouseLeftButtonUp += (_, _) => { Hide(); Dismissed?.Invoke(); };
     }
 
     // In a test the bubble only keeps its words, out of the user's sight.
@@ -123,6 +124,8 @@ internal sealed class Speech
     private readonly DispatcherTimer timer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(25) };
     private readonly System.Diagnostics.Stopwatch elapsed = new();
     private Line? line;
+    private VoiceClip? voice;
+    private CancellationTokenSource? pendingVoice;
     private int shown;
     private DateTime hideAt = DateTime.MaxValue;
     // How long the bubble stays after the last word (settings: bubble_seconds): by default a little longer for more
@@ -140,41 +143,124 @@ internal sealed class Speech
     {
         this.bubble = bubble;
         timer.Tick += (_, _) => Tick();
+        bubble.Dismissed += () =>
+        {
+            if (IsShowingReply || pendingVoice != null || voice != null) Stop();
+        };
     }
 
-    internal bool IsSaying => timer.IsEnabled;
-    internal bool IsTalking => timer.IsEnabled && line?.Talking == true;
+    internal bool IsShowingReply { get; private set; }
+    internal bool IsSaying => timer.IsEnabled || pendingVoice != null;
+    internal bool IsTalking => timer.IsEnabled && voice == null && pendingVoice == null && line?.Talking == true;
+    internal double? AudioMouthLevel => voice?.MouthLevel;
     internal string Words => line?.Plain ?? "";
-    internal double Spoken => line?.Spoken ?? 0;
+    internal double Spoken => Math.Max(line?.Spoken ?? 0, voice?.Seconds ?? 0);
 
-    internal void Say(Line said)
+    internal void Say(Line said, VoiceClip? recording = null, bool preparingVoice = false) =>
+        Start(said, reply: false, preparingVoice, recording);
+
+    internal void BeginReply(Line said, bool preparingVoice) => Start(said, reply: true, preparingVoice);
+
+    private void Start(Line said, bool reply, bool preparingVoice, VoiceClip? recording = null)
     {
+        StopVoice();
+        ClearVoiceRequest(cancel: true);
+        IsShowingReply = reply;
+        pendingVoice = preparingVoice ? new CancellationTokenSource() : null;
         line = said; shown = 0; hideAt = DateTime.MaxValue;
         bubble.NewLine();
+        if (reply) bubble.Say(said.Plain);
+        if (recording?.TryPlay() == true) voice = recording;
+        else recording?.Dispose();
         elapsed.Restart();
         timer.Start();
         Tick();
     }
 
+    internal bool IsAwaitingVoice(Line said) => pendingVoice != null && ReferenceEquals(line, said);
+
+    internal CancellationToken VoiceRequest(Line said) => IsAwaitingVoice(said) ? pendingVoice!.Token : new CancellationToken(true);
+
+    // Speech takes ownership only if playback starts for the same bubble that requested it.
+    internal bool FinishVoice(Line said, VoiceClip? recording)
+    {
+        if (!IsAwaitingVoice(said)) return false;
+        ClearVoiceRequest(cancel: false);
+        if (recording?.TryPlay() == true)
+        {
+            voice = recording;
+            timer.Start(); // Track playback even if the pet is out of sight.
+            return true;
+        }
+        if (!timer.IsEnabled) hideAt = Until(said.Plain);
+        return false;
+    }
+
+    internal void RestoreReply()
+    {
+        Tick();
+        if (IsShowingReply && line is { } reply) bubble.Say(reply.Plain);
+    }
+
     // Called by the pet's own clock too, so a bubble left alone goes away.
     internal void Tick()
     {
-        if (timer.IsEnabled && line is { } current)
+        if (IsShowingReply && voice is { } recording)
+        {
+            if (recording.IsPlaying) return;
+            timer.Stop();
+            StopVoice();
+            hideAt = Until(Words);
+        }
+        else if (timer.IsEnabled && line is { } current)
         {
             current.Advance(elapsed.Elapsed.TotalSeconds);
-            if (current.Shown != shown && current.Shown > 0)
+            if (!IsShowingReply && current.Shown != shown && current.Shown > 0)
             {
                 shown = current.Shown;
                 bubble.Say(current.Plain[..shown]);
             }
-            if (current.Done)
+            if (current.Done && voice?.IsPlaying != true)
             {
                 timer.Stop();
-                if (current.Plain.Length > 0) { bubble.Say(current.Plain); hideAt = Until(current.Plain); }
+                StopVoice();
+                if (!IsShowingReply && current.Plain.Length > 0) bubble.Say(current.Plain);
+                if (pendingVoice == null && current.Plain.Length > 0) hideAt = Until(current.Plain);
             }
         }
-        if (!timer.IsEnabled && DateTime.UtcNow >= hideAt) { bubble.Hide(); hideAt = DateTime.MaxValue; }
+        if (!timer.IsEnabled && DateTime.UtcNow >= hideAt) Stop();
     }
 
-    internal void Stop() { timer.Stop(); bubble.Hide(); hideAt = DateTime.MaxValue; }
+    internal void Stop()
+    {
+        timer.Stop();
+        StopVoice();
+        IsShowingReply = false;
+        ClearVoiceRequest(cancel: true);
+        bubble.Hide();
+        hideAt = DateTime.MaxValue;
+    }
+
+    private void StopVoice()
+    {
+        voice?.Dispose();
+        voice = null;
+    }
+
+    internal void Mute()
+    {
+        StopVoice();
+        if (pendingVoice == null) return;
+        ClearVoiceRequest(cancel: true);
+        if (!timer.IsEnabled && line is { } said) hideAt = Until(said.Plain);
+    }
+
+    private void ClearVoiceRequest(bool cancel)
+    {
+        var pending = pendingVoice;
+        pendingVoice = null;
+        if (pending == null) return;
+        if (cancel) pending.Cancel();
+        pending.Dispose();
+    }
 }

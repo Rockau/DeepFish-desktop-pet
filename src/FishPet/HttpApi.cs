@@ -105,7 +105,19 @@ internal sealed class HttpApi : IDisposable
             if (method == "POST" && path.StartsWith("/call/"))
             {
                 var name = Uri.UnescapeDataString(path["/call/".Length..]);
-                if (name is not ("panel" or "event" or "check_update") && !ToolNames().Contains(name)) { await Write(stream, 404, new { error = "没有这个工具：" + name }); return; }
+                if (name is not ("panel" or "event" or "check_update" or "conversation_status" or "conversation_send"
+                    or "conversation_present" or "conversation_cancel" or "conversation_transcribe"
+                    or "touch_lines" or "touch_lines_save" or "touch_lines_reset"
+                    or "touch_settings" or "touch_save" or "touch_delete" or "touch_reset" or "touch_preview"
+                    or "action_settings" or "action_save" or "action_reset" or "action_preview"
+                    or "action_adjust" or "action_end_adjust"
+                    or "affection_settings" or "affection_set" or "affection_save" or "affection_reset") && !ToolNames().Contains(name))
+                { await Write(stream, 404, new { error = "没有这个工具：" + name }); return; }
+                if (name is "conversation_status" or "conversation_send" or "conversation_present" or "conversation_transcribe")
+                    timeout.CancelAfter(TimeSpan.FromSeconds(name switch
+                    {
+                        "conversation_status" => 60, "conversation_send" => 215, "conversation_present" => 375, _ => 175
+                    }));
                 var arguments = body.Length == 0 ? Empty() : JsonDocument.Parse(body).RootElement.Clone();
                 await Write(stream, 200, await execute(name, arguments, timeout.Token));
                 return;

@@ -11,6 +11,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 
 namespace FishTray;
 
@@ -43,7 +44,6 @@ public partial class MainWindow : Window
     // 开关式的按钮（脸红、加载……）：和桌宠 get_state 里的 overlays / raw 对着显示开没开
     private readonly List<(Item Item, ToggleButton Button, bool Fav)> toggles = [];
     private readonly Dictionary<string, FrameworkElement> mainChips = new();
-    private string skitSignature = "";
     private readonly Ui ui;
     private readonly System.Windows.Threading.DispatcherTimer toastTimer = new() { Interval = TimeSpan.FromSeconds(2.6) };
 
@@ -51,16 +51,16 @@ public partial class MainWindow : Window
 
     private sealed record Seg(RadioButton[] Buttons);
 
-    // 面板自己记住的：哪几块展开着、常用的按钮、有没有固定在最前面、“更多设置”开没开（ui.json，放在控制台文件夹里）
+    // 面板自己记住的展开状态、常用按钮和窗口偏好。
     private sealed class Ui
     {
         public List<string> Open { get; set; } = [];
         public List<string> Favs { get; set; } = [];
         public bool Pin { get; set; }
-        public bool More { get; set; }
         public bool Dance { get; set; } // “随音乐摇摆”那一行展开着没有
         public bool Sleep { get; set; } // “睡觉提醒”那一行展开着没有（默认折叠）
         public bool Lunch { get; set; } // “午饭提醒”那一行展开着没有（默认折叠）
+        public bool Eye { get; set; } // “陪玩陪看”那一栏展开着没有（默认折叠，2026-11-18）
         public bool Taskbar { get; set; } = true; // 在任务栏显示面板（默认开，2026-11-18 起）：开了任务栏上有个按钮，面板有最小化键；点 X 仍是收回小托盘
 
         private static string File_ => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "ui.json"));
@@ -88,7 +88,8 @@ public partial class MainWindow : Window
         ui = Ui.Load();
         Topmost = ui.Pin; PinButton.IsChecked = ui.Pin;
         SwTaskbar.IsChecked = ui.Taskbar; ApplyTaskbar();
-        MoreToggle.IsChecked = ui.More; MorePanel.Visibility = ui.More ? Visibility.Visible : Visibility.Collapsed;
+        WireSettingsMenu();
+        WireFocusTimer();
         DanceFold.IsChecked = ui.Dance; DancePanel.Visibility = ui.Dance ? Visibility.Visible : Visibility.Collapsed;
         DanceFold.Click += (_, _) => { ui.Dance = DanceFold.IsChecked == true; DancePanel.Visibility = ui.Dance ? Visibility.Visible : Visibility.Collapsed; ui.Save(); };
         SleepFold.IsChecked = ui.Sleep; SleepPanel.Visibility = ui.Sleep ? Visibility.Visible : Visibility.Collapsed;
@@ -130,11 +131,26 @@ public partial class MainWindow : Window
         SwStartHidden.Click += (_, _) => { Touch("start_hidden"); Queue("start_hidden", SwStartHidden.IsChecked != true); };
 
         ShowSwitch.Click += async (_, _) => await SetShown(ShowSwitch.IsChecked == true);
+        Wire(SwVoiceEnabled, "voice_enabled");
+        VoiceLanguagePicker.SelectionChanged += (_, _) =>
+        {
+            if (!loading && VoiceLanguagePicker.SelectedValue is string language) Queue("voice_language", language);
+        };
+        VoiceVolumeSlider.ValueChanged += (_, e) => { if (!loading) Queue("volume", Math.Round(e.NewValue, 2)); };
+        SetupSlider(VoiceVolumeSlider, VoiceVolumeMarks, VoiceVolumeValue, v => $"{v:P0}", (0, "0%"), (.5, "50%"), (1, "100%"));
+        TouchLinesShortcut.Click += (_, _) =>
+        {
+            TouchSettings.OpenTouchLineEditor();
+            OpenInlineSettings(conversation: false);
+        };
+        AffectionSettings.Changed += async (_, _) => await Refresh();
+        ConversationSettings.IsVisibleChanged += (_, _) => UpdateConversationVisibility();
+        StateChanged += (_, _) => UpdateConversationVisibility();
+        Closed += (_, _) => { ConversationSettings.Dispose(); TouchSettings.Dispose(); AffectionSettings.Dispose(); };
         CloseButton.Click += (_, _) => Hide(); // 点 X 只是关面板、收回小托盘，不退出
         MinButton.Click += (_, _) => WindowState = WindowState.Minimized;
         SwTaskbar.Click += (_, _) => { ui.Taskbar = SwTaskbar.IsChecked == true; ui.Save(); ApplyTaskbar(); Notice(ui.Taskbar ? "任务栏上会显示面板" : "不再在任务栏显示"); };
         PinButton.Click += (_, _) => { ui.Pin = PinButton.IsChecked == true; Topmost = ui.Pin; ui.Save(); Notice(ui.Pin ? "已固定在最前面" : "取消固定"); };
-        MoreToggle.Click += (_, _) => { ui.More = MoreToggle.IsChecked == true; MorePanel.Visibility = ui.More ? Visibility.Visible : Visibility.Collapsed; ui.Save(); };
         Header.MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) { moved = true; try { DragMove(); } catch { } } };
         KeyDown += OnKeyDown;
         ResetButton.Click += async (_, _) => await ResetAll();
@@ -142,6 +158,16 @@ public partial class MainWindow : Window
         SearchBox.TextChanged += (_, _) => ApplyFilter();
         SearchClear.Click += (_, _) => { SearchBox.Clear(); SearchBox.Focus(); };
         SizeChanged += (_, _) => { if (!moved && IsVisible) Anchor(); else if (IsVisible) KeepOnScreen(); };
+        InitEye(); // 更多设置里的「陪玩陪看」（MainWindow.Eye.cs）
+    }
+
+    private void UpdateConversationVisibility() =>
+        ConversationSettings.SetExpanded(ConversationSettings.IsVisible && WindowState != WindowState.Minimized);
+
+    internal void OpenInlineSettings(bool conversation)
+    {
+        Open();
+        SelectSettings(conversation ? "voice" : "touch", scrollToMenu: true);
     }
 
     // 在任务栏显示面板：开了（默认）才有任务栏按钮和最小化键；关着时只在托盘里。
@@ -156,9 +182,21 @@ public partial class MainWindow : Window
         if (e.Key == Key.Escape)
         {
             if (SearchBox.Text.Length > 0) { SearchBox.Clear(); e.Handled = true; return; }
+            if (SettingsPicker.SelectedValue is string selected && selected != "home")
+            {
+                SelectSettings("home");
+                e.Handled = true;
+                return;
+            }
             Hide();
         }
-        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
+        else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            SelectSettings("actions", scrollToMenu: true);
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            e.Handled = true;
+        }
     }
 
     // 自检（--selftest）：像人一样点各个控件，再向桌宠要状态核对，结果写进日志
@@ -214,16 +252,18 @@ public partial class MainWindow : Window
             await Task.Delay(500);
             Click(ResetButton);
             s = await State(); Check("恢复平常", s is { } h4 && !Has(h4, "raw", "加载") && !Has(h4, "overlays", "脸红") && !load.IsChecked.GetValueOrDefault());
+            SelectSettings("actions");
             SearchBox.Text = "脸红"; await Task.Delay(100);
-            Check("搜索只剩匹配", mainChips["Face:脸红"].IsVisible && !mainChips["Cue:歪头"].IsVisible && !SettingsArea.IsVisible);
+            Check("搜索只剩匹配", mainChips["Face:脸红"].IsVisible && !mainChips["Cue:歪头"].IsVisible && !AppearanceDetails.IsVisible);
             SearchBox.Text = ""; await Task.Delay(100);
-            Check("清空搜索恢复", SettingsArea.IsVisible);
+            Check("清空搜索恢复", ActionsDetails.IsVisible && SearchHint.IsVisible);
             var favBefore = ui.Favs.ToList();
             ToggleFavorite(items["Cue:微笑"]); bool added = ui.Favs.Contains("Cue:微笑") && FavCard.IsVisible;
             ToggleFavorite(items["Cue:微笑"]); bool removed = !ui.Favs.Contains("Cue:微笑");
             Check("收藏与取消收藏", added && removed);
             ui.Favs = favBefore; RebuildFavs(); ui.Save();
 
+            SelectSettings("appearance");
             ShowSwitch.IsChecked = false; Click(ShowSwitch);
             await Task.Delay(4500); s = await State(); Check("收起", s is { } h && h.GetProperty("hidden").GetBoolean());
             if (!wasHidden) { ShowSwitch.IsChecked = true; Click(ShowSwitch); await Task.Delay(1500); }
@@ -232,10 +272,11 @@ public partial class MainWindow : Window
         finally { File.WriteAllLines(logPath, log, new UTF8Encoding(false)); }
     }
 
-    // 把面板渲染成一张 PNG（--shot 自检用）。more：展开“更多设置”；open：三块全展开；scroll：滚到最底
+    // 把面板渲染成一张 PNG（--shot 自检用）。
     internal void Snapshot(string path, bool more, bool open = false, bool scroll = false, string search = "")
     {
-        if (more) { MoreToggle.IsChecked = true; MorePanel.Visibility = Visibility.Visible; DanceFold.IsChecked = true; DancePanel.Visibility = Visibility.Visible; }
+        if (open || search.Length > 0) SelectSettings("actions");
+        else if (more) SelectSettings("appearance");
         if (open) foreach (var view in sections) { view.Head.IsChecked = true; view.Body.Visibility = Visibility.Visible; }
         if (search.Length > 0) SearchBox.Text = search;
         UpdateLayout();
@@ -260,14 +301,14 @@ public partial class MainWindow : Window
             WindowState = WindowState.Normal;
             moved = false;
             Opacity = 0;
-            if (SkitSignature() != skitSignature) BuildSections(); // skits.txt 改过：小剧场按钮跟着换
+            SelectSettings("home");
             Show();
             Anchor();
             BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
         }
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; // 最小化在任务栏里的：从托盘点开也要还原
         Activate();
-        _ = Refresh();
+        _ = Refresh(forceLibrary: true);
     }
 
     private void Anchor()
@@ -555,8 +596,6 @@ public partial class MainWindow : Window
 
     // ---- 表情 / 动作 / 小剧场 ----
 
-    private static string SkitSignature() => string.Join("|", ReadSkits());
-
     // 标题下一行写着“// 彩蛋”的小剧场不放按钮：只等她自己在对的时候演（生日、节日、深夜催睡这些）。
     private static string[] ReadSkits()
     {
@@ -583,10 +622,9 @@ public partial class MainWindow : Window
 
     private void BuildSections()
     {
-        var skits = ReadSkits();
-        skitSignature = string.Join("|", skits);
+        var skits = libraryCatalog.HasValue ? LibraryNames("skits") : ReadSkits();
         SectionsHost.Children.Clear(); sections.Clear(); items.Clear(); mainChips.Clear(); toggles.Clear();
-        foreach (var section in Catalog.Build(skits))
+        foreach (var section in Catalog.Build(skits).Select(WithImportedItems))
         {
             var view = new SectionView { Section = section };
             bool open = ui.Open.Contains(section.Key);
@@ -594,6 +632,7 @@ public partial class MainWindow : Window
             view.Body = new StackPanel { Visibility = open ? Visibility.Visible : Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 4) };
             var card = new Border { Background = (Brush)FindResource("CardBrush"), BorderBrush = (Brush)FindResource("CardLineBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = new Thickness(16, 12, 16, 6), Margin = new Thickness(0, 0, 0, 8) };
             var inner = new StackPanel();
+            inner.Children.Add(LibraryToolbar(section));
             inner.Children.Add(new TextBlock { Text = section.Blurb, Style = (Style)FindResource("Caption"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), Opacity = .85 });
             foreach (var group in section.Groups)
             {
@@ -668,9 +707,13 @@ public partial class MainWindow : Window
                 result = await Pet.Panel(new { op = "exp", name = item.Arg, on }); break;
             case Kind.Idle: Notice("▶ " + item.Label); result = await Pet.Panel(new { op = "idle", name = item.Arg }); break;
             case Kind.RawMotion: Notice("▶ " + item.Label + "（原版动作，约 13 秒）"); result = await Pet.Panel(new { op = "motion", name = item.Arg }); break;
-            case Kind.Skit:
-                Notice("▶ 小剧场：" + item.Label);
-                result = await Pet.Call("coax", new { stage = 6, text = item.Arg }); break;
+            case Kind.Skit or Kind.Library:
+                result = await Pet.Call("performance_library", new
+                {
+                    operation = "play", category = item.Kind == Kind.Skit ? SkitCategory : item.State, id = item.Arg
+                });
+                Notice(LibraryString(result, "playing") is { } playing ? "▶ " + playing : LibraryError(result));
+                return;
             case Kind.SkitRandom:
                 Notice("▶ 随机来一个小剧场");
                 result = await Pet.Call("coax", new { stage = 6 }); break;
@@ -764,7 +807,6 @@ public partial class MainWindow : Window
         bool searching = query.Length > 0;
         SearchHint.Visibility = SearchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         SearchClear.Visibility = SearchBox.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        SettingsArea.Visibility = MoreArea.Visibility = searching ? Visibility.Collapsed : Visibility.Visible;
         FavCard.Visibility = !searching && ui.Favs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         FavHint.Visibility = !searching && ui.Favs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         bool any = false;
@@ -812,11 +854,13 @@ public partial class MainWindow : Window
 
     // ---- 和桌宠对一下状态 ----
 
-    internal async Task Refresh()
+    internal async Task Refresh(bool forceLibrary = false)
     {
         // 不靠 Process.GetProcessesByName 判断她在不在：这台机器上它有时看不到桌宠进程，直接问她本人（本机修，2026-11-11）
         if (await Pet.Call("get_state") is not { } state) { SetStatus(null, "连不上桌宠"); return; }
         Apply(state);
+        await RefreshLibrary(LibraryString(state, "library_revision"), forceLibrary);
+        SyncToggles(state);
     }
 
     // “随音乐摇摆”右边的小字：和顶上“· 在桌面上”一个样子，开着哪类就写哪类，都关着写“已关闭”
@@ -1021,6 +1065,10 @@ public partial class MainWindow : Window
             if (Fresh("fps")) SetSeg(fpsSeg, Math.Max(0, Array.IndexOf(FpsValues, (int)D("fps", 60))));
             if (Fresh("idle_seconds")) IdleSlider.Value = NearestStop(D("idle_seconds", 40));
             if (Fresh("bubble_scale")) BubbleSlider.Value = Math.Clamp(D("bubble_scale", 1), 0.5, 2);
+            if (Fresh("voice_enabled")) SwVoiceEnabled.IsChecked = B("voice_enabled");
+            if (Fresh("voice_language"))
+                VoiceLanguagePicker.SelectedValue = T("voice_language") is "ja" or "zh" ? T("voice_language") : "auto";
+            if (Fresh("volume")) VoiceVolumeSlider.Value = Math.Clamp(D("volume", .25), 0, 1);
             if (Fresh("stay")) SetSeg(staySeg, Array.IndexOf(StayValues, (int)D("bubble_seconds")));
             if (Fresh("quality")) SetSeg(qualitySeg, Math.Max(0, Array.IndexOf(QualityValues, D("tex_scale", 1))));
             if (Fresh("dance_strength")) SetSeg(strengthSeg, Math.Max(0, Array.IndexOf(StrengthValues, T("dance_strength"))));

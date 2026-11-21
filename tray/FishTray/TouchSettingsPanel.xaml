@@ -1,0 +1,230 @@
+<UserControl x:Class="FishTray.TouchSettingsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True" Foreground="{StaticResource TextBrush}" FontFamily="{StaticResource UiFont}">
+    <UserControl.Resources>
+        <Style x:Key="RegionNumber" TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource InputBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="MaxLength" Value="9"/>
+        </Style>
+        <Style x:Key="TouchModeTab" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="ModeCard" Background="{StaticResource InputBrush}" BorderBrush="{StaticResource LineBrush}"
+                                BorderThickness="1" CornerRadius="8" Margin="2" Padding="5,6">
+                            <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ModeCard" Property="Background" Value="{StaticResource CardBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ModeCard" Property="BorderBrush"
+                                        Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ModeCard" Property="BorderBrush" Value="{StaticResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <StackPanel>
+        <DockPanel Margin="0,0,0,8">
+            <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新预览" Style="{StaticResource Ghost}" Margin="8,0,0,0"/>
+            <TextBlock Text="体型" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <ComboBox x:Name="ShapePicker" DisplayMemberPath="Name" SelectedValuePath="Id"
+                      Style="{StaticResource Picker}" AutomationProperties.Name="体型"/>
+        </DockPanel>
+
+        <StackPanel x:Name="Editor" IsEnabled="False">
+            <UniformGrid Columns="2" Margin="0,0,0,6">
+                <RadioButton x:Name="LeftRegions" GroupName="TouchButtonRegions" IsChecked="True"
+                             Content="左键点击" Foreground="#7FD1FF" Style="{StaticResource TouchModeTab}"
+                             AutomationProperties.Name="左键点击区域"/>
+                <RadioButton x:Name="RightRegions" GroupName="TouchButtonRegions"
+                             Content="右键拖动" Foreground="#FFC06B" Style="{StaticResource TouchModeTab}"
+                             AutomationProperties.Name="右键拖动区域"/>
+            </UniformGrid>
+            <DockPanel Margin="2,0,0,9">
+                <Ellipse x:Name="ModeDot" Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBlock x:Name="ButtonHint" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+            </DockPanel>
+            <DockPanel Margin="0,0,0,8">
+                <Button x:Name="AddButton" DockPanel.Dock="Right" Content="新增区域" Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+                <TextBlock Text="区域" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ComboBox x:Name="ZonePicker" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{StaticResource Picker}"
+                          AutomationProperties.Name="互动区域"/>
+            </DockPanel>
+            <ComboBox x:Name="PointerMode" SelectedIndex="0" Margin="0,0,0,8"
+                      Style="{StaticResource Picker}" AutomationProperties.Name="预览操作">
+                <ComboBoxItem Content="拖动或缩放选框"/>
+                <ComboBoxItem Content="点击位置查看命中区域"/>
+                <ComboBoxItem Content="重新框选当前区域"/>
+            </ComboBox>
+            <Border BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" Background="{StaticResource CardBrush}"
+                    CornerRadius="10" Padding="8">
+                <StackPanel>
+                    <Viewbox Stretch="Uniform" MaxHeight="315">
+                        <Grid x:Name="PreviewFrame" Width="300" Height="480" ClipToBounds="True" Background="#14061429">
+                            <Image x:Name="ModelPreview" Stretch="Fill" IsHitTestVisible="False"/>
+                            <Canvas x:Name="PreviewSurface" Background="Transparent"/>
+                        </Grid>
+                    </Viewbox>
+                    <TextBlock x:Name="PreviewHint" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0"
+                               Text="点边框选中。拖边框移动，拖右下角调整大小。"/>
+                </StackPanel>
+            </Border>
+
+            <TextBlock x:Name="ZoneHint" Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/>
+            <ToggleButton x:Name="TouchLinesFold" Style="{StaticResource SubFold}" Content="本框互动台词"
+                          IsChecked="True" Visibility="Collapsed" Margin="0,5,0,0"/>
+            <StackPanel x:Name="TouchLinesPanel" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                    <TextBlock Text="好感阶段" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <ComboBox x:Name="TouchLineLevel" Style="{StaticResource Picker}" DisplayMemberPath="Label" MinWidth="94"
+                              SelectedValuePath="Id" AutomationProperties.Name="台词好感阶段"/>
+                </StackPanel>
+                <TextBlock Text="互动反应" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+                <ComboBox x:Name="TouchLineReaction" Style="{StaticResource Picker}" DisplayMemberPath="Label" Margin="0,0,0,7"
+                          SelectedValuePath="Id" AutomationProperties.Name="互动反应"/>
+                <StackPanel x:Name="TouchLineFields" Visibility="Collapsed">
+                    <TextBlock Text="反应名称" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+                    <TextBox x:Name="TouchLineName" Style="{StaticResource RegionNumber}" MaxLength="48"
+                             AutomationProperties.Name="反应名称，留空恢复默认名"/>
+                    <TextBlock Text="名称留空会恢复默认名。" Style="{StaticResource Caption}" Margin="0,3,0,0"/>
+                    <TextBlock Text="台词" Style="{StaticResource Caption}" Margin="0,7,0,3"/>
+                    <TextBox x:Name="TouchLineInput" Style="{StaticResource RegionNumber}" AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="78" MaxHeight="172" MaxLength="8500" VerticalScrollBarVisibility="Auto"
+                             AutomationProperties.Name="互动台词"/>
+                    <TextBlock Text="每行一句，留空时这项反应静音。" Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                    <WrapPanel Margin="0,7,0,0">
+                        <Button x:Name="SaveTouchLines" IsEnabled="False" Content="保存台词和名称" Style="{StaticResource PillAccent}" Margin="0,0,6,4"/>
+                        <Button x:Name="ResetTouchLines" IsEnabled="False" Content="恢复本档台词" Style="{StaticResource Ghost}"/>
+                    </WrapPanel>
+                </StackPanel>
+                <TextBlock x:Name="TouchLineStatus" Style="{StaticResource Caption}" Margin="0,3,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel x:Name="SelectionEditor">
+            <TextBlock Text="区域名称" Margin="0,12,0,5"/>
+            <TextBox x:Name="RegionName" Style="{StaticResource RegionNumber}" MaxLength="30"
+                     AutomationProperties.Name="区域名称"/>
+            <TextBlock x:Name="GestureHint" Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"
+                       Visibility="Collapsed"/>
+            <TextBlock Text="选框位置和大小（%）" Margin="0,15,0,5"/>
+            <UniformGrid Columns="4">
+                <StackPanel Margin="0,0,5,0">
+                    <TextBlock Text="左" Style="{StaticResource Caption}"/>
+                    <TextBox x:Name="RectLeft" Style="{StaticResource RegionNumber}" AutomationProperties.Name="选框左边百分比"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,5,0">
+                    <TextBlock Text="上" Style="{StaticResource Caption}"/>
+                    <TextBox x:Name="RectTop" Style="{StaticResource RegionNumber}" AutomationProperties.Name="选框上边百分比"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,5,0">
+                    <TextBlock Text="宽" Style="{StaticResource Caption}"/>
+                    <TextBox x:Name="RectWidth" Style="{StaticResource RegionNumber}" AutomationProperties.Name="选框宽度百分比"/>
+                </StackPanel>
+                <StackPanel>
+                    <TextBlock Text="高" Style="{StaticResource Caption}"/>
+                    <TextBox x:Name="RectHeight" Style="{StaticResource RegionNumber}" AutomationProperties.Name="选框高度百分比"/>
+                </StackPanel>
+            </UniformGrid>
+
+            <StackPanel x:Name="LeftEditor">
+            <CheckBox x:Name="UseDefaultClick" Content="使用这个部位的默认点击反应" Margin="0,15,0,5"/>
+            <TextBlock Text="点击时播放的动作" Margin="0,0,0,5"/>
+            <DockPanel x:Name="ClickFields">
+                <Button x:Name="PreviewClick" DockPanel.Dock="Right" Content="试一下" Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+                <ComboBox x:Name="ClickCue" IsEditable="True" IsTextSearchEnabled="False" Style="{StaticResource Picker}"
+                          AutomationProperties.Name="点击动作"/>
+            </DockPanel>
+            <TextBlock Text="留空表示点击时不播放动作。" Style="{StaticResource Caption}" Margin="0,6,0,0"/>
+            <TextBlock Text="鼠标悬停时（可选）" Margin="0,10,0,5"/>
+            <CheckBox x:Name="UseDefaultHover" Content="使用这个部位的默认悬停反应" Margin="0,0,0,5"/>
+            <DockPanel x:Name="HoverFields">
+                <Button x:Name="PreviewHover" DockPanel.Dock="Right" Content="试一下" Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+                <ComboBox x:Name="HoverCue" IsEditable="True" IsTextSearchEnabled="False" Style="{StaticResource Picker}"
+                          AutomationProperties.Name="悬停动作"/>
+            </DockPanel>
+            </StackPanel>
+            <StackPanel x:Name="StrokeEditor" Visibility="Collapsed">
+                <TextBlock Text="按住右键拖动时" Margin="0,15,0,5"/>
+                <ComboBox x:Name="GesturePicker" DisplayMemberPath="Name" SelectedValuePath="Id"
+                          Style="{StaticResource Picker}" AutomationProperties.Name="右键拖动互动"/>
+                <TextBlock Text="松手后播放的动作（可选）" Margin="0,10,0,5"/>
+                <CheckBox x:Name="UseDefaultRelease" Content="使用抚摸自带的松手反应" Margin="0,0,0,5"/>
+                <DockPanel x:Name="ReleaseFields">
+                    <Button x:Name="PreviewStroke" DockPanel.Dock="Right" Content="试一下" Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+                    <ComboBox x:Name="StrokeCue" IsEditable="True" IsTextSearchEnabled="False" Style="{StaticResource Picker}"
+                              AutomationProperties.Name="松手后动作"/>
+                </DockPanel>
+            </StackPanel>
+            <WrapPanel Margin="0,15,0,0">
+                <Button x:Name="SaveButton" Content="保存区域" Style="{StaticResource PillAccent}" Margin="0,0,6,5"/>
+                <Button x:Name="DeleteButton" Content="删除区域" Style="{StaticResource Ghost}" Margin="0,0,6,5"/>
+                <Button x:Name="ResetButton" Content="恢复本区默认" Style="{StaticResource Ghost}" Margin="0,0,0,5"/>
+            </WrapPanel>
+            <Button x:Name="EditRegionAction" Content="编辑这个动作" Style="{StaticResource Ghost}"
+                    IsEnabled="False" HorizontalAlignment="Left" Margin="0,4,0,4"/>
+            </StackPanel>
+            <Button x:Name="RestoreDefaultsButton" Content="恢复当前按键的默认区域" Style="{StaticResource Ghost}"
+                    HorizontalAlignment="Left" Margin="0,8,0,0"/>
+            <StackPanel x:Name="AddedActions" Visibility="Collapsed" Margin="0,15,0,0">
+                <DockPanel Margin="0,0,0,5">
+                    <Button x:Name="EditRecentAction" DockPanel.Dock="Right" Content="编辑刚才的互动"
+                            Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+                    <TextBlock Text="动作编辑" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel>
+                    <Button x:Name="PreviewAdded" DockPanel.Dock="Right" Content="试一下" Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+                    <ComboBox x:Name="AddedCue" Style="{StaticResource Picker}" AutomationProperties.Name="编辑动作"/>
+                </DockPanel>
+                <TextBlock x:Name="ActionTarget" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" Margin="0,6,0,0"/>
+                <TextBlock x:Name="ActionHint" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                <StackPanel x:Name="ActionFields" IsEnabled="False">
+                    <DockPanel Margin="0,10,0,0">
+                        <TextBlock Text="动作幅度"/>
+                        <TextBlock x:Name="ActionStrengthValue" DockPanel.Dock="Right" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
+                    </DockPanel>
+                    <Slider x:Name="ActionStrength" Minimum="0.25" Maximum="2" Value="1" SmallChange="0.05" LargeChange="0.25"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True" Style="{StaticResource StarSlider}"
+                            Focusable="True" AutomationProperties.Name="动作幅度"/>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock Text="动作速度"/>
+                        <TextBlock x:Name="ActionSpeedValue" DockPanel.Dock="Right" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
+                    </DockPanel>
+                    <Slider x:Name="ActionSpeed" Minimum="0.5" Maximum="2" Value="1" SmallChange="0.05" LargeChange="0.25"
+                            TickFrequency="0.05" IsSnapToTickEnabled="True" Style="{StaticResource StarSlider}"
+                            Focusable="True" AutomationProperties.Name="动作速度"/>
+                    <StackPanel x:Name="ActionSoftnessFields" Visibility="Collapsed">
+                        <DockPanel Margin="0,8,0,0">
+                            <TextBlock Text="柔和程度"/>
+                            <TextBlock x:Name="ActionSoftnessValue" DockPanel.Dock="Right" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
+                        </DockPanel>
+                        <Slider x:Name="ActionSoftness" Minimum="0" Maximum="1" Value="0.5" SmallChange="0.05" LargeChange="0.25"
+                                TickFrequency="0.05" IsSnapToTickEnabled="True" Style="{StaticResource StarSlider}"
+                                Focusable="True" AutomationProperties.Name="互动柔和程度"/>
+                    </StackPanel>
+                    <TextBlock Text="表情" Margin="0,8,0,5"/>
+                    <ComboBox x:Name="ActionFace" DisplayMemberPath="Name" SelectedValuePath="Id" Style="{StaticResource Picker}"
+                              AutomationProperties.Name="动作表情"/>
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button x:Name="SaveAction" Content="保存动作" Style="{StaticResource PillAccent}" Margin="0,0,6,5"/>
+                        <Button x:Name="ResetAction" Content="恢复动作默认" Style="{StaticResource Ghost}" Margin="0,0,0,5"/>
+                    </WrapPanel>
+                </StackPanel>
+                <TextBlock x:Name="ActionStatus" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+            </StackPanel>
+        </StackPanel>
+
+        <TextBlock x:Name="Status" Margin="0,10,0,0" Text="正在读取触摸区域…" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+    </StackPanel>
+</UserControl>

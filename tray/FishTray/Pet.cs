@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FishTray;
@@ -14,6 +15,8 @@ internal static class Pet
 {
     // 本机接口，永远不走代理（系统代理开着时 HttpClient 有时会把 127.0.0.1 也送进代理，连不上托盘）
     private static readonly HttpClient Http = new(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(8) };
+    private static readonly HttpClient ConversationHttp = new(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false })
+    { Timeout = Timeout.InfiniteTimeSpan };
 
     internal static string Root { get; private set; } = "";
     internal static string Exe => Path.Combine(Root, "bin", "FishPet.exe");
@@ -77,6 +80,33 @@ internal static class Pet
 
     // 控制台专用的互动接口（桌宠里的隐藏工具 panel）：做表情、做动作、恢复平常。
     internal static Task<JsonElement?> Panel(object args) => Call("panel", args);
+
+    internal static async Task<JsonElement?> ConversationCall(string tool, object args, int seconds, CancellationToken cancellation = default)
+    {
+        if (Api() is not { } api || !Uri.TryCreate(api.Url, UriKind.Absolute, out var host) ||
+            host.Scheme != Uri.UriSchemeHttp || !host.IsLoopback) return null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(host, "/call/" + tool))
+            { Content = new StringContent(JsonSerializer.Serialize(args), Encoding.UTF8, "application/json") };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", api.Token);
+            request.Headers.Add("X-FishTray", "1");
+            using var response = await ConversationHttp.SendAsync(request, timeout.Token);
+            if (!response.IsSuccessStatusCode) return null;
+            using var outer = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            if (outer.RootElement.TryGetProperty("isError", out var error) && error.ValueKind == JsonValueKind.True) return null;
+            var text = outer.RootElement.GetProperty("content")[0].GetProperty("text").GetString();
+            using var inner = JsonDocument.Parse(text ?? "{}");
+            return inner.RootElement.Clone();
+        }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException
+            or InvalidOperationException or System.Collections.Generic.KeyNotFoundException or ArgumentException)
+        {
+            return null;
+        }
+    }
 
     internal static async Task Say(string text)
     {

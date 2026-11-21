@@ -1,0 +1,85 @@
+<UserControl x:Class="FishTray.AffectionSettingsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True" Foreground="{StaticResource TextBrush}" FontFamily="{StaticResource UiFont}">
+    <UserControl.Resources>
+        <Style x:Key="BondNumber" TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource InputBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+            <Setter Property="Padding" Value="7,5"/>
+            <Setter Property="MaxLength" Value="6"/>
+        </Style>
+    </UserControl.Resources>
+    <StackPanel>
+        <DockPanel Margin="0,5,0,0">
+            <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新" Style="{StaticResource Ghost}" Margin="6,0,0,0"/>
+            <TextBlock x:Name="CurrentPoints" Text="正在读取关系值…" VerticalAlignment="Center" TextWrapping="Wrap"/>
+        </DockPanel>
+        <TextBlock Text="直接设置关系值" Margin="0,12,0,5"/>
+        <DockPanel>
+            <Button x:Name="SetPointsButton" DockPanel.Dock="Right" Content="设置" Style="{StaticResource PillAccent}" Margin="6,0,0,0"/>
+            <TextBox x:Name="PointsInput" Style="{StaticResource BondNumber}" MaxLength="3"
+                     AutomationProperties.Name="直接设置关系值"/>
+        </DockPanel>
+        <TextBlock x:Name="PointsHint" Style="{StaticResource Caption}" Text="可填写 −50 到 200。" Margin="0,4,0,0" TextWrapping="Wrap"/>
+
+        <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,15,0,12"/>
+        <TextBlock Text="各阶段的互动反应" Margin="0,0,0,6"/>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,5,0">
+                <TextBlock Text="关系阶段" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+                <ComboBox x:Name="LevelPicker" DisplayMemberPath="Name" SelectedValuePath="Id"
+                          Style="{StaticResource Picker}" AutomationProperties.Name="关系阶段"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+                <TextBlock Text="互动" Style="{StaticResource Caption}" Margin="0,0,0,3"/>
+                <ComboBox x:Name="EventPicker" DisplayMemberPath="Name" SelectedValuePath="Id"
+                          Style="{StaticResource Picker}" AutomationProperties.Name="好感互动"/>
+            </StackPanel>
+        </Grid>
+        <StackPanel x:Name="RuleFields" IsEnabled="False">
+        <TextBlock Text="每次关系值变化" Margin="0,12,0,5"/>
+            <TextBox x:Name="DeltaInput" Style="{StaticResource BondNumber}"
+                     AutomationProperties.Name="每次关系值变化"/>
+            <TextBlock Text="正数增加，负数减少，0 表示不变。" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            <TextBlock Text="回应动作" Margin="0,12,0,5"/>
+            <ComboBox x:Name="ActionPicker" DisplayMemberPath="Name" SelectedValuePath="Id"
+                      Style="{StaticResource Picker}" AutomationProperties.Name="好感互动动作"/>
+            <TextBlock Text="摸头的默认动作是左键反应。右键抚摸的回应在松手后播放。" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            <ToggleButton x:Name="LimitsFold" Content="计分限制" Style="{StaticResource SubFold}" Focusable="True" Margin="0,10,0,0"/>
+            <StackPanel x:Name="LimitsFields" Visibility="Collapsed">
+                <TextBlock Text="本项每天最多计分次数" Style="{StaticResource Caption}" Margin="0,0,0,4"/>
+                <TextBox x:Name="PerDayInput" Style="{StaticResource BondNumber}" AutomationProperties.Name="每天计分次数"/>
+                <TextBlock Text="0 表示不限次数。" Style="{StaticResource Caption}" Margin="0,3,0,8"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,5,0">
+                        <TextBlock Text="本级每天加分上限" Style="{StaticResource Caption}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="DailyGainInput" Style="{StaticResource BondNumber}" AutomationProperties.Name="本级每天加分上限"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="本级每天扣分上限" Style="{StaticResource Caption}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="DailyLossInput" Style="{StaticResource BondNumber}" AutomationProperties.Name="本级每天扣分上限"/>
+                    </StackPanel>
+                </Grid>
+                <TextBlock Text="每日次数在各阶段间共用。总额度按当前阶段计算，0 表示不加分或不扣分。达到磨合后，自然扣分最低为 20，上方仍可手动设置负分。" Style="{StaticResource Caption}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+            <TextBlock x:Name="RuleHint" Style="{StaticResource Caption}" Margin="0,5,0,0" TextWrapping="Wrap"/>
+            <WrapPanel Margin="0,12,0,0">
+                <Button x:Name="SaveButton" Content="保存本项" Style="{StaticResource PillAccent}" Margin="0,0,6,5"/>
+                <Button x:Name="ResetButton" Content="恢复本项默认" Style="{StaticResource Ghost}" Margin="0,0,0,5"/>
+            </WrapPanel>
+            <Button x:Name="ResetLevelButton" Content="恢复本级默认" Style="{StaticResource Ghost}" HorizontalAlignment="Left"/>
+        </StackPanel>
+        <TextBlock x:Name="Status" Style="{StaticResource Caption}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+    </StackPanel>
+</UserControl>

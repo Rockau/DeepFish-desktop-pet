@@ -122,6 +122,7 @@ internal sealed partial class PetWindow : Window
     internal PetWindow(Settings settings, string? model, bool test, string? pipe = null, bool manual = false)
     {
         this.settings = settings; this.model = model; this.test = test;
+        library = OpenLibrary(model);
         Condition.Birthday = settings.Birthday; // 生日那天的台词、小剧场（mutter.txt、skits.txt 里的 @生日）
         manualStart = manual;
         standby = settings.StartHidden && !test && !manual; // 手动叫出来的（桌面图标）不管「启动时先收起」，直接露面
@@ -139,13 +140,17 @@ internal sealed partial class PetWindow : Window
         LoadMutterFile();
         LoadSkits();
         LoadTouchFile();
+        LoadTouchLineEdits();
+        LoadTouchLineLibrary();
         speech = new Speech(bubble) { Seconds = settings.BubbleSeconds };
         mutterSpeech = new Speech(mutter) { Seconds = -1 }; // 停留由嘀咕/小剧场/事件自己控制，Speech 不自动收
         body = new Body(Send);
         updates = new Updates(Places.Root, Places.Log);
-        behavior = new Behavior(Send, () => [.. settings.Outfit, .. body.Overlays], new Random()) { HandBusy = () => body.HandUp, Ended = body.Restore, IdleStarted = name => OnIdleStarted(name), TextIdle = text => PlayTextIdle(text), TextIdleMoods = textCues.Keys.ToArray(), SkitIdle = name => PlaySkit(name), SkitIdleMoods = skits.Keys.ToArray(),
+        behavior = new Behavior(Send, () => [.. settings.Outfit, .. body.Overlays], new Random()) { HandBusy = () => body.HandUp, Ended = body.Restore, IdleStarted = name => OnIdleStarted(name), TextIdle = text => PlayTextIdle(text), TextIdleMoods = textCues.Keys.ToArray(), SkitIdle = name => PlaySkit(name), SkitIdleMoods = [.. autoPlaySkits],
             TextWeight = (name, local) => WeightOf(textConds, name, local), SkitWeightOf = (name, local) => WeightOf(skitConds, name, local),
-            ChimeTexts = ChimeNow, ChimeBlocked = () => MutterBlocked || textIdleActive, Smitten = () => affection.Level >= Affection.Levels.Length };
+            ChimeTexts = ChimeNow, ChimeBlocked = () => MutterBlocked || textIdleActive,
+            Tune = (name, action) => ActionStyleFor(name).Apply(action) };
+        ConfigureAffection();
         ApplySize();
         Place();
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(33), DispatcherPriority.Background, (_, _) => Tick(), Dispatcher);
@@ -184,17 +189,43 @@ internal sealed partial class PetWindow : Window
         };
         PreviewMouseLeftButtonDown += Down;
         PreviewMouseMove += Move;
+        PreviewMouseMove += RightDragMove;
         PreviewMouseLeftButtonUp += Up;
         PreviewMouseRightButtonDown += StrokeDown; // 右键抚摸、悬停反应、拖拽惯性和头晕（PetWindow.Touch.cs）
         PreviewMouseRightButtonUp += StrokeUp;
         PreviewMouseMove += HoverMove;
         MouseLeave += (_, _) => hoverZone = null;
-        LostMouseCapture += (_, _) => { if (dragging) { dragging = false; if (dragged) Dropped(); } if (stroking) EndStroke(); };
+        LostMouseCapture += (_, _) =>
+        {
+            if (dragging)
+            {
+                dragging = false;
+                if (dragged) Dropped();
+            }
+            CancelRightDrag();
+            if (stroking) EndStroke();
+        };
         Closing += Leaving;
-        Closed += (_, _) => { StopMusic(); TouchClosed(); Recorder.Stop(wait: true); server?.Dispose(); api?.Dispose(); player?.Dispose(); bubble.Close(); };
+        focusClock.Tick += (_, _) => FocusTick();
+        Closed += (_, _) => { focusClock.Stop(); StopMusic(); TouchClosed(); Recorder.Stop(wait: true); server?.Dispose(); api?.Dispose(); player?.Dispose(); bubble.Close(); };
     }
 
-    private void Send(string command) => player?.Send(command);
+    private bool NegativeAffection => affection.Points < 0;
+
+    private void Send(string command)
+    {
+        // 表情和触摸共用渲染器的保持参数，先交还待机占用的参数，再送新的动作命令。
+        if (negativeIdleFace && OverridesIdleFace(command)) SetNegativeIdleFace(false, default);
+        if (NegativeAffection && (command.StartsWith("exp 脸红 ", StringComparison.Ordinal) ||
+            command.StartsWith("expamount 脸红 ", StringComparison.Ordinal)))
+            command = "exp 脸红 0";
+        player?.Send(command);
+        if (offendedPose && command == "clearall")
+        {
+            offendedPose = false;
+            SyncOffendedPose();
+        }
+    }
 
     // 录制的版面信息，都是帧像素：气泡尖儿该对着哪儿（窗口中线、头顶往下 6 DIP），气泡的样式参数。
     private object RecordLayout()
@@ -243,12 +274,16 @@ internal sealed partial class PetWindow : Window
         started.Ready += Ready;
         started.Failed += message => Trouble("渲染出问题了：" + message);
         player = started;
+        negativeIdleFace = false;
+        negativeIdleShadeUntil = null;
+        offendedPose = false;
         danceSent.Clear(); // 新渲染器不知道上一轮按住过什么，跳舞的参数要重新发一遍（PetWindow.Dance.cs）
         lastLeft = Left; lastTop = Top;
         var dpi = VisualTreeHelper.GetDpi(this);
         var scale = dpi.DpiScaleX * Recorder.Boost; // 宽高用同一系数，保证渲染画面比例始终与窗口一致（不会变形）；录制 supersample 时按几倍出图
         Recorder.Expect((int)(Width * scale), (int)(Height * scale));
-        started.Start(model, Shape, settings.Outfit, (int)(Width * scale), (int)(Height * scale), settings.Fps, settings.TexScale);
+        var outfit = NegativeAffection ? settings.Outfit.Where(name => name != "脸红").ToArray() : settings.Outfit;
+        started.Start(model, Shape, outfit, (int)(Width * scale), (int)(Height * scale), settings.Fps, settings.TexScale);
         body.Forget(); silent = null; relaxAt = null;
         behavior.Resume(DateTime.UtcNow, settings.IdleSeconds);
         timer.Start();
@@ -275,11 +310,15 @@ internal sealed partial class PetWindow : Window
     private void Ready()
     {
         ready = true;
+        SyncOffendedPose();
         if (standby) return; // 收着待命：先不露面、不问候
         if (restarting) { restarting = false; return; } // 换清晰度重启渲染：不重新问候
         image.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300)));
-        behavior.Show("问候", DateTime.UtcNow);
-        body.Apply("抚胸");
+        if (!offendedPose)
+        {
+            behavior.Show("问候", DateTime.UtcNow);
+            body.Apply("抚胸");
+        }
         WelcomeSoon(); // 全新安装的第一次出场，接着说几句欢迎（只说这一次）
         if (manualStart) NoAgentHint();
     }
@@ -323,6 +362,12 @@ internal sealed partial class PetWindow : Window
         var area = SystemParameters.WorkArea;
         Left = settings.Left ?? area.Right - Width - 8;
         Top = settings.Top ?? area.Bottom - Height * .5;
+        if (!Here().Screen.Contains(FaceCenter()))
+        {
+            var work = Here().Work;
+            Left = work.Right - Width - 8;
+            Top = work.Bottom - Height * .5;
+        }
         Clamp();
     }
 
@@ -454,7 +499,7 @@ internal sealed partial class PetWindow : Window
                 coaxAutoReturn = true; coaxSpeechSeen = false; coaxReturnAt = null;
                 coaxHoldPose = true; // 说完后保持黑脸盯人，直到归位
                 body.Apply("闭眼 黑脸"); // 出场就是闭眼 + 黑脸
-                Stage4Sequence(); // 1 秒后睁眼，再 1 秒后慢慢质问
+                _ = Stage4Sequence(); // 轮到哄睡台词时，睁眼、前倾、再慢慢质问
                 break;
             default:
                 return null;
@@ -464,19 +509,40 @@ internal sealed partial class PetWindow : Window
     }
 
     // 第四层演出：出场时已经闭眼+黑脸，1 秒后突然睁眼盯前方，再大前倾，再 1 秒后一个字一个字质问（每字 0.5 秒）。
-    private async void Stage4Sequence()
+    private Task Stage4Sequence()
     {
-        await Task.Delay(1200); // 出场淡入 + 闭眼黑脸停留约 1 秒
-        body.Apply("睁大 正视"); // 突然睁眼，直勾勾盯前方
-        await Task.Delay(350); // 睁眼后停顿一下
-        body.Apply("大前倾"); // 身子猛地向前倾
-        await Task.Delay(1000);
-        SayLine(coaxStage4Text ?? "为 什 么 还 没 睡 ？", 2); // 每字 0.5 秒
+        int epoch = coaxEpoch;
+        queuedStage4Epoch = epoch;
+        string text = coaxStage4Text ?? "为 什 么 还 没 睡 ？";
+        bool Active() => epoch == coaxEpoch && coaxAutoReturn && !exiting && !standby && !hiding;
+        return InTurn(async () =>
+        {
+            try
+            {
+                if (!Active()) return;
+                await Task.Delay(1200);
+                if (!Active()) return;
+                body.Apply("睁大 正视");
+                await Task.Delay(350);
+                if (!Active()) return;
+                body.Apply("大前倾");
+                await Task.Delay(1000);
+                if (!Active()) return;
+                coaxSpeechSeen = false;
+                coaxReturnAt = null;
+                SayLine(text, 2); // 每字 0.5 秒
+            }
+            finally
+            {
+                if (queuedStage4Epoch == epoch) queuedStage4Epoch = null;
+            }
+        }, CancellationToken.None);
     }
 
     // 归位（用户 2026-11-13 改）：先快速鞠躬淡出退场，趁看不见恢复原来的体型、大小、视线跟随，
     // 再在上一次的位置快速淡入。不再是正中的她一下变小、一下跳回去。
     private int coaxEpoch; // 归位的路上又来了新的一层（RunStage）就把这次归位作废，别两边抢
+    private int? queuedStage4Epoch; // 第四层排队时，其它台词不启动这轮的归位计时
     private async void CoaxReturn()
     {
         coaxAutoReturn = false; coaxSpeechSeen = false; coaxReturnAt = null; // 别每帧再触发
@@ -529,6 +595,7 @@ internal sealed partial class PetWindow : Window
         if (standby || hiding || exiting || test) return;
         int token = ++hideToken;
         hiding = true;
+        CancelRightDrag();
         YieldMutter();
         for (int wait = 0; wait < 150 && speech.IsSaying && token == hideToken; wait++) await Task.Delay(200);
         if (token != hideToken) return;
@@ -560,8 +627,6 @@ internal sealed partial class PetWindow : Window
     // ───────── 待机自言自语：嘀咕、固定文本、小剧场、临时道具 ─────────
     // 说话优先：只要大肥鱼开口或在哄睡演出，这里的一切都让位（见 YieldMutter / MutterBlocked）。
 
-    private sealed record SkitStep(string Text, string? Cue, double Seconds);
-    private sealed record Skit(string[] Props, SkitStep[] Steps);
     private readonly Dictionary<string, Skit> skits = [];
     private readonly Dictionary<string, string[]> textProps = []; // 固定嘀咕文本 → 临时道具
     private readonly HashSet<string> tempProps = [];               // 现在临时戴着的配饰（模型里的表情名）
@@ -612,8 +677,7 @@ internal sealed partial class PetWindow : Window
     private static string[] ParseProps(string text) =>
         text.Split([' ', '　', '、', '，', ','], StringSplitOptions.RemoveEmptyEntries).Where(name => PetProps.Names.Contains(name)).Distinct().ToArray();
 
-    // touch.txt：「反应|台词」或「反应|台词|亲密3」，点她身体不同位置时随机念一句（反应见 Behavior.ClickMood：摸头/戳脸/开心/护裙/震惊/心虚，连点 5 下是「挨打」，
-    // 亲密度满档时戳裙子是「娇羞」）。写了「亲密N」的那句要到第 N 级才会说，而且级别越高的句子越常被挑中（本机加，2026-11-08）。
+    // touch.txt：「反应|台词」或「反应|台词|亲密3」。写了「亲密N」的那句要到第 N 级才会说，级别越高的句子越常被挑中。
     private void LoadTouchFile()
     {
         // touch.txt 之外，右键抚摸、悬停、头晕的台词（stroke.txt / hover.txt / dizzy.txt）格式一样，一起读进来；哪个文件没有就跳过。
@@ -636,47 +700,6 @@ internal sealed partial class PetWindow : Window
                 if (!touchLines.TryGetValue(key, out var list)) touchLines[key] = list = [];
                 list.Add((parts[1].Trim(), level));
             }
-        }
-        catch { }
-    }
-
-    // skits.txt：「# 名字」开头一个小剧场（名字后面可以加「@条件」，如「# 生日快乐 @10月21日」）；「@道具 单片眼镜 兔牙」可选；之后每行「台词|动作|停留秒数」，台词可空（只做动作）、秒数可省（3.5）。
-    private void LoadSkits()
-    {
-        try
-        {
-            string? name = null; Condition? when = null; var props = new List<string>(); var steps = new List<SkitStep>();
-            void Flush()
-            {
-                if (name != null && steps.Count > 0)
-                {
-                    skits[name] = new Skit([.. props], [.. steps]);
-                    if (when is { Plain: false }) skitConds[name] = when;
-                }
-                props.Clear(); steps.Clear();
-            }
-            foreach (var raw in File.ReadAllLines(Path.Combine(Places.Root, "skits.txt")))
-            {
-                var line = raw.Trim();
-                if (line.Length == 0 || line.StartsWith("//")) continue;
-                if (line.StartsWith('#'))
-                {
-                    Flush();
-                    var title = line.TrimStart('#').Trim();
-                    var at = title.IndexOf('@');
-                    name = (at >= 0 ? title[..at] : title).Trim();
-                    string? bad = null;
-                    when = at >= 0 ? Condition.Parse(title[(at + 1)..], out bad) : Condition.Always;
-                    if (when == null) { Places.Log($"skits.txt 的条件读不懂「{bad}」，这个小剧场先不用：{name}"); name = null; }
-                    continue;
-                }
-                if (line.StartsWith("@道具")) { props.AddRange(ParseProps(line[3..])); continue; }
-                var parts = line.Split('|', 3);
-                var cue = parts.Length > 1 && Body.CueReadable(parts[1].Trim(), 8) ? parts[1].Trim() : null;
-                double seconds = parts.Length > 2 && double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s) ? Math.Clamp(s, 1, 10) : 3.5;
-                if (parts[0].Trim().Length > 0 || cue != null) steps.Add(new SkitStep(parts[0].Trim(), cue, seconds));
-            }
-            Flush();
         }
         catch { }
     }
@@ -713,32 +736,34 @@ internal sealed partial class PetWindow : Window
     private void IdlePropsFor(string action)
     {
         if (MutterBlocked || !IdlePropTable.TryGetValue(action, out var item) || random.NextDouble() > item.Chance) return;
-        PutOn([item.Prop], Behavior.Moods[action].Seconds + 1);
+        PutOn([item.Prop], behavior.Action(action).Seconds + 1);
     }
 
     // 待机小动作（原版11个）开始时：顺手可能戴个道具，再按概率现问模型嘀咕一句（连动作、道具一起配）。
     private void OnIdleStarted(string action)
     {
+        initiativeMotion = behavior.MotionRevision;
         IdlePropsFor(action);
         MutterFor(action);
     }
 
     private async void MutterFor(string action)
     {
-        if (FocusWork) return; // 专注陪伴期间不嘀咕（本机加，2026-11-09）
+        if (!CanInitiate || FocusWork) return; // 专注陪伴期间不嘀咕（本机加，2026-11-09）
         if (string.IsNullOrWhiteSpace(settings.LlmApiKey)) return;
         if (random.NextDouble() > settings.MutterChance) return; // 随机概率，避免太吵
         if (MutterBlocked) return;
         int token = ++mutterToken;
+        initiativeSpeechToken = token;
         try
         {
             var said = await Mutter.Ask(Http, settings.LlmBaseUrl, settings.LlmApiKey, settings.LlmModel, action);
             // 等模型回话的这段时间里，她可能已经开口说话了：那就丢掉这句嘀咕。
-            if (said == null || token != mutterToken || MutterBlocked) return;
+            if (said == null || token != mutterToken || !CanInitiate || MutterBlocked) return;
             if (said.Cue != null) { body.Apply(said.Cue); textIdleActive = true; }
             if (said.Props.Length > 0) PutOn(said.Props, 5);
-            mutterSpeech.Say(new Line(said.Text, body.Apply));
-            await Task.Delay(4000);
+            var seconds = await SayMutter(said.Text);
+            await Task.Delay(TimeSpan.FromSeconds(Math.Max(4, seconds + .25)));
             if (token != mutterToken) return;
             mutterSpeech.Stop();
             if (said.Cue != null) { textIdleActive = false; body.Relax(); }
@@ -749,14 +774,14 @@ internal sealed partial class PetWindow : Window
     // 抽到固定文本：显示文本 + 按文本配的表情动作 + 临时道具。
     private async void PlayTextIdle(string text)
     {
-        if (FocusWork) return; // 专注时不嘀咕
-        if (MutterBlocked) return;
+        if (!CanInitiate || FocusWork || MutterBlocked) return;
         int token = ++mutterToken;
+        initiativeSpeechToken = token;
         textIdleActive = true;
         if (textCues.TryGetValue(text, out var cue)) body.Apply(cue);
         if (textProps.TryGetValue(text, out var props)) PutOn(props, 6);
-        mutterSpeech.Say(new Line(text, body.Apply));
-        await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, text.Length * 0.12 + 1)));
+        var seconds = await SayMutter(text);
+        await Task.Delay(TimeSpan.FromSeconds(Math.Max(seconds + .25, Math.Max(5, text.Length * .12 + 1))));
         if (token != mutterToken) return; // 中途被说话打断了，收尾已经做过
         textIdleActive = false;
         mutterSpeech.Stop();
@@ -767,9 +792,10 @@ internal sealed partial class PetWindow : Window
     // 小剧场：几句话 + 动作 + 道具连着演。force：演示用，不受「刚说完要安静」限制。
     private async void PlaySkit(string name, bool force = false)
     {
-        if (FocusWork && !force) return; // 专注陪伴期间不演小剧场（连语音一起停）
-        if (!skits.TryGetValue(name, out var skit) || (!force && MutterBlocked)) return;
+        if (!force && (!CanInitiate || FocusWork || MutterBlocked)) return;
+        if (!skits.TryGetValue(name, out var skit)) return;
         int token = ++mutterToken;
+        if (!force) initiativeSpeechToken = token;
         skitToken = token; // 演出期间暂时不跟鼠标（Tick 里看 SkitOn）；被打断时 mutterToken 一变就自动算演完
         textIdleActive = true;
         PutOn(skit.Props, skit.Steps.Sum(step => step.Seconds) + 1);
@@ -778,8 +804,9 @@ internal sealed partial class PetWindow : Window
             if (step.Cue != null) body.Apply(step.Cue);
             // 台词里用全角「｜」隔开几句，每次随机演其中一句（2026-11-06）。
             var said = step.Text.Contains('｜') ? step.Text.Split('｜')[random.Next(step.Text.Split('｜').Length)].Trim() : step.Text;
-            if (said.Length > 0) mutterSpeech.Say(new Line(said, body.Apply)); else mutterSpeech.Stop();
-            await Task.Delay(TimeSpan.FromSeconds(Math.Max(step.Seconds, said.Length * 0.12 + 0.3)));
+            double seconds = 0;
+            if (said.Length > 0) seconds = await SayMutter(said); else mutterSpeech.Stop();
+            await Task.Delay(TimeSpan.FromSeconds(Math.Max(step.Seconds, Math.Max(said.Length * .12, seconds) + .3)));
             if (token != mutterToken || exiting) return; // 被说话打断了，收尾已经做过
         }
         textIdleActive = false;
@@ -789,12 +816,26 @@ internal sealed partial class PetWindow : Window
         body.Relax();
     }
 
+    private int? initiativeSpeechToken, initiativeMotion;
+    private bool CanInitiate => Affection.AllowsInitiative(affection.Level);
+
+    private void StopInitiative()
+    {
+        if (initiativeMotion == behavior.MotionRevision && behavior.Showing != null)
+        {
+            behavior.Interrupt();
+            TakeOffProps();
+        }
+        if (initiativeSpeechToken == mutterToken) YieldMutter();
+        initiativeMotion = initiativeSpeechToken = null;
+    }
+
     private int skitToken;
     private bool SkitOn => skitToken != 0 && skitToken == mutterToken;
 
     // 嘀咕现在能不能出来：她在说话、放语音、做哄睡演出，或刚说完不久，都不行。
     private bool MutterBlocked =>
-        exiting || speech.IsSaying || silent != null || coaxAutoReturn || textIdleActive || DateTime.UtcNow < mutterQuietUntil || (panelHold && body.Posing);
+        exiting || !lines.IsCompleted || speech.IsSaying || speech.IsShowingReply || PlayingImportedCombination || silent != null || coaxAutoReturn || textIdleActive || DateTime.UtcNow < mutterQuietUntil || (panelHold && body.Posing);
 
     // 她要开口了：正在演的嘀咕/小剧场马上收起，在途的作废，临时道具摘掉，说话的优先权给她。
     private void YieldMutter()
@@ -840,6 +881,7 @@ internal sealed partial class PetWindow : Window
     // Her body takes a moment to change while the window changes at once: she goes out, changes unseen, and comes back.
     private async void SetShape(string id)
     {
+        CancelRightDrag();
         settings.Shape = Shape.Find(id).Id;
         settings.Save();
         if (player is not { } current) return;
@@ -877,10 +919,15 @@ internal sealed partial class PetWindow : Window
         // When the last agent goes, nobody is left to say its work ended. A program on the HTTP interface has no
         // connection to lose: what it starts stays until it says it is done.
         int agents = server?.Connections ?? 0;
-        if (agents == 0 && agentsBefore > 0) behavior.ClearActivities();
+        if (agents == 0 && agentsBefore > 0)
+        {
+            behavior.ClearActivities();
+            if (FocusWork) behavior.Activity("专注", true);
+        }
         agentsBefore = agents;
         UpdateBody();
         MusicTick(); // 有音乐就把跳舞带起来（PetWindow.Dance.cs）
+        if (!CanInitiate) StopInitiative();
         HoverTick();
         BondTick();
         AlarmTick();
@@ -888,7 +935,7 @@ internal sealed partial class PetWindow : Window
         speech.Tick();
         mutterSpeech.Tick();
         // 哄睡演示：句子说完、动作演完 3 秒后自动归位。
-        if (coaxAutoReturn)
+        if (coaxAutoReturn && queuedStage4Epoch != coaxEpoch)
         {
             if (speech.IsSaying) coaxSpeechSeen = true;
             else if (coaxSpeechSeen && coaxReturnAt == null) coaxReturnAt = DateTime.UtcNow.AddSeconds(5);
@@ -897,7 +944,9 @@ internal sealed partial class PetWindow : Window
         // Nothing of her own while she says something or still holds the look she said it with.
         if (speech.IsSaying || silent != null) mutterQuietUntil = DateTime.UtcNow.AddSeconds(10); // 说完后嘀咕再等 10 秒
         if (tempProps.Count > 0 && DateTime.UtcNow >= propsUntil) TakeOffProps(); // 临时道具到点自动摘
-        behavior.Tick(DateTime.UtcNow, speech.IsSaying || silent != null || body.Posing || textIdleActive, settings.IdleSeconds); // 嘀咕/小剧场/事件演着的时候，待机抽签和小动作也别插进来（本机修，2026-11-06）
+        var now = DateTime.UtcNow;
+        behavior.Tick(now, speech.IsSaying || silent != null || body.Posing || textIdleActive || rightDragging || PlayingImportedCombination, settings.IdleSeconds, allowIdle: CanInitiate);
+        SyncNegativeIdleFace(now);
         GetCursorPos(out var cursor);
         if (cursor.X != lastCursor.X || cursor.Y != lastCursor.Y)
         {
@@ -968,6 +1017,7 @@ internal sealed partial class PetWindow : Window
         // 本机改（2026-11-11）：DSH 每次工具调用可能重开一次 MCP，桥接一断就退场的话托盘小图标也会跟着消失。
         // 留一分钟缓冲：真的把 Agent 关了才会走，只是重连或者闲一会儿不算。还有程序在用网页接口时也留着。
         if ((server?.Connections ?? 0) > 0) { hadAgent = true; aloneSince = null; return; }
+        if (focus.Now != FocusTimer.Phase.None) { aloneSince = null; return; }
         if (!hadAgent) return; // 手动打开、没接过 Agent 的，一直留着
         if (DateTime.UtcNow - lastHttp < HttpUse) { aloneSince = null; return; }
         // 刚说过再见的（20 秒内）：等 3 秒就走，不用等满一分钟
@@ -990,9 +1040,10 @@ internal sealed partial class PetWindow : Window
         hiddenForFullscreen = covered;
         current.Send($"pause {(covered ? 1 : 0)}");
         bubble.Quiet = covered || test;
-        if (covered) { bubble.Hide(); Hide(); return; }
+        if (covered) { CancelRightDrag(); bubble.Hide(); Hide(); return; }
         Show();
         Topmost = false; Topmost = true;
+        speech.RestoreReply();
     }
 
     // 置顶标记可能在她不知情的时候被拿走（别的“总在最前”工具、系统切全屏、换显示器），
@@ -1089,16 +1140,20 @@ internal sealed partial class PetWindow : Window
 
     // ---- The user's hands on her ----
 
+    private TouchBox? dragTouchBox;
+
     private void Down(object sender, MouseButtonEventArgs e)
     {
-        if (exiting || e.ChangedButton != MouseButton.Left) return;
+        if (exiting || stroking || rightDragging || e.ChangedButton != MouseButton.Left) return;
         e.Handled = true;
         RaiseAboveAll();
+        var local = e.GetPosition(this);
+        dragTouchBox = TouchAt(local.X / Width, local.Y / Height, right: false)?.Box;
         dragging = true; dragged = false;
         GetCursorPos(out var p);
         dragStart = new Point(p.X, p.Y);
         windowStart = new Point(Left, Top);
-        CaptureMouse();
+        if (!CaptureMouse()) dragging = false;
     }
 
     private void Move(object sender, MouseEventArgs e)
@@ -1110,6 +1165,7 @@ internal sealed partial class PetWindow : Window
         if (Math.Abs(dx) + Math.Abs(dy) > 4 && !dragged)
         {
             dragged = true;
+            CancelExtraTouch();
             behavior.DragStart();
             TouchDragStarted();
             Happened("drag_start", new { });
@@ -1128,25 +1184,80 @@ internal sealed partial class PetWindow : Window
         // The window also gets clicks on her faint edges, which count as missing her.
         var at = e.GetPosition(this);
         if (VisualTreeHelper.HitTest(image, at) == null) return;
-        var zone = Behavior.Zone(Shape.Id, at.X / Width, at.Y / Height, settings.Outfit);
+        if (TouchAt(at.X / Width, at.Y / Height, right: false) is { } region)
+        {
+            var faceBox = region.Id == "face" ? region.Rect
+                : region.Action == "戳脸" ? TouchRegions(Shape.Id, right: false).FirstOrDefault(area => area.Id == "face")?.Rect : null;
+            double middle = faceBox is { } face ? face.X + face.Width / 2 : .5;
+            ClickTouchRegion(region, at.X / Width < middle ? 1 : -1);
+        }
+    }
+
+    private void ClickTouchRegion(TouchRegion region, int side)
+    {
+        var cue = region.Action;
+        string zone = region.Id;
+        if (cue != null || zone == "foot") behavior.ResetChestPokes();
+        if (cue == "") return;
         YieldMutter(); // 点她时嘀咕/小剧场让位，别跟触碰台词抢气泡
-        behavior.Click(zone, DateTime.UtcNow, at.X / Width < .5 ? 1 : -1);
-        BondTouched(behavior.Showing);
-        SayTouch(behavior.Showing);
-        Happened("click", new { zone, reaction = behavior.Showing });
+        BondSeen();
+        int level = affection.Level;
+        bool plainFace = NegativeAffection;
+        string? kind = TouchClickEvent(zone, level);
+        if (zone == "foot" && cue == null)
+        {
+            bool remove = !IsBarefoot;
+            Dress(ShoeExpression, remove);
+            BondGain("换鞋", queueReaction: false);
+            var shoeAction = EffectiveAffectionRule(level, "换鞋").Action;
+            if (shoeAction is { Length: > 0 }) PlayTouchCue(shoeAction, side, plainFace);
+            string shoeReaction = remove ? "脱鞋" : "穿鞋";
+            SayTouch(string.IsNullOrEmpty(shoeAction) ? shoeReaction : shoeAction, region.Box, level, plainFace);
+            Happened("click", new { zone, reaction = shoeReaction });
+            return;
+        }
+        var now = DateTime.UtcNow;
+        var defaultReaction = cue == null ? behavior.ClickReaction(zone, now, level) : null;
+        if (defaultReaction == "挨打") kind = "挨打";
+        var affectionCue = kind != null ? EffectiveAffectionRule(level, kind).Action : null;
+        if (affectionCue != null)
+        {
+            behavior.ResetChestPokes();
+            cue = affectionCue;
+        }
+        else if (zone == "face" && cue == "戳脸") cue = behavior.NextFacePoke(level, now);
+        if (cue is { Length: > 0 }) PlayTouchCue(cue, side, plainFace);
+        else if (cue == "") behavior.Interrupt();
+        else if (defaultReaction != null)
+            behavior.Show(defaultReaction == "戳脸" ? behavior.NextFacePoke(level, now) : defaultReaction,
+                now, side, force: defaultReaction == "挨打", plainFace: plainFace);
+        if (behavior.Showing is { } actionName) recentEditableAction = actionName;
+        var reaction = behavior.Showing ?? cue;
+        if (kind != null) BondGain(kind, queueReaction: false);
+        SayTouch(cue ?? reaction, region.Box, level, plainFace);
+        Happened("click", new { zone, reaction });
     }
 
     // 点她时除了身体反应，再念一句对应台词（touch.txt）。用嘀咕的小气泡，嘴跟着字动，按字数停一会儿后收起。
-    private async void SayTouch(string? reaction)
+    private int? positiveTouchSpeechToken;
+
+    private async void SayTouch(string? reaction, TouchBox? box, int? reactionLevel = null, bool plainFace = false)
     {
-        if (reaction?.StartsWith("娇羞") == true) reaction = "娇羞"; // 满档戳裙子的三种反应共用 touch.txt 里「娇羞」的台词
-        if (reaction == null || !touchLines.TryGetValue(reaction, out var all)) return;
-        var lines = all.Where(line => line.Level <= affection.Level).ToArray();
+        if (speech.IsShowingReply || reaction == null) return;
+        // 自定义台词跟随触发动作的档位。降为反感时切到反感台词，旧台词始终受当前好感门槛约束。
+        int triggeredLevel = reactionLevel ?? affection.Level;
+        int legacyLevel = Math.Min(triggeredLevel, affection.Level);
+        int level = affection.Level == 0 ? 0 : triggeredLevel;
+        string group = TouchLineGroup(reaction, level) ?? reaction;
+        var lines = (box is { } selectedBox ? LinesForTouch(new(level, selectedBox, group), legacyLevel)
+            : TouchLineGroup(reaction, legacyLevel) is { } legacyGroup
+                ? LegacyLinesForTouch(legacyGroup).Where(line => line.Level <= legacyLevel) : []).ToArray();
         if (lines.Length == 0) return;
         int token = mutterToken; // 有新的触碰台词、或她开口了，就别让旧的一句乱收气泡
+        positiveTouchSpeechToken = level > 0 ? token : null;
         // 摸头彩蛋的五句：抽完一轮再重抽，尽量不连续重复（用户定的，2026-11-11）
         string said;
-        if (reaction == "抚摸头4")
+        if (group == "抚摸头4")
             said = NextMeltLine(lines.Select(line => line.Text).ToArray());
         else
         {
@@ -1155,10 +1266,11 @@ internal sealed partial class PetWindow : Window
             said = lines[^1].Text;
             foreach (var line in lines) { pick -= 1 + 2 * line.Level; if (pick < 0) { said = line.Text; break; } }
         }
-        mutterSpeech.Say(new Line(said, body.Apply));
+        var duration = await SayMutter(said, plainFace);
         var wait = Math.Clamp(said.Length * 250 + 1200, 2500, 6000) / 1000.0;
-        await Task.Delay(TimeSpan.FromSeconds(wait));
+        await Task.Delay(TimeSpan.FromSeconds(Math.Max(wait, duration + .25)));
         if (token != mutterToken || speech.IsSaying) return;
+        positiveTouchSpeechToken = null;
         mutterSpeech.Stop();
     }
 
@@ -1231,22 +1343,25 @@ internal sealed partial class PetWindow : Window
         finally { turn.SetResult(); }
     }
 
-    private void SayLine(string text, double charactersPerSecond = Line.CharactersPerSecond)
+    private void SayLine(string text, double charactersPerSecond = Line.CharactersPerSecond,
+        VoiceClip? recording = null, bool voiceBuiltIn = true)
     {
         YieldMutter();
         relaxAt = null;
         panelHold = false; // 她自己开口了：控制台点出来的样子不再强留
-        var line = new Line(text, body.Apply, charactersPerSecond);
-        if (line.Plain.Trim().Length == 0) { PlaySilently(text); return; }
+        if (Body.Strip(text).Trim().Length == 0) { recording?.Dispose(); PlaySilently(text); return; }
+        var line = new Line(text, body.Apply, charactersPerSecond, recording?.Seconds);
+        bool prepare = voiceBuiltIn && recording == null && HasBuiltInVoice(line.Plain);
         StartFilming(line.Plain);
-        speech.Say(line);
+        speech.Say(line, recording, preparingVoice: prepare);
+        if (prepare) _ = AttachBuiltInVoice(speech, line, ambient: false);
     }
 
     // film: false for what she tries in the mirror, which she sees there already.
-    private void PlaySilently(string text, bool filmed = true)
+    private void PlaySilently(string text, bool filmed = true, bool plainFace = false)
     {
         relaxAt = null;
-        silent = new Line(text, body.Apply);
+        silent = new Line(text, (cue, spoken, tone) => body.Apply(cue, spoken, tone, plainFace));
         if (filmed) StartFilming(silent.Plain);
         silentClock.Restart();
         silent.Advance(0);
@@ -1268,10 +1383,14 @@ internal sealed partial class PetWindow : Window
         relaxAt = null;
     }
 
-    // 她的嘴跟着字动（没有录音了，只看在不在说话）。
+    // 语音对话时跟随音频响度，普通气泡和嘀咕仍按文字模拟口型。
     private void UpdateMouth(Player current)
     {
-        double level = speech.IsTalking || mutterSpeech.IsTalking ? .2 + .35 * Math.Abs(Math.Sin(Environment.TickCount64 / 70.0)) : 0;
+        // 表情定格时保留画稿的嘴型，触碰气泡照常显示。
+        bool allowMutterMouth = !Behavior.HoldsFacePokeMouth(behavior.Showing)
+            && !HeadStrokeFace.HoldsReleaseMouth(behavior.Showing) && !behavior.HoldsMouth;
+        double level = speech.AudioMouthLevel ?? (allowMutterMouth ? mutterSpeech.AudioMouthLevel : null) ??
+            (speech.IsTalking || allowMutterMouth && mutterSpeech.IsTalking ? .2 + .35 * Math.Abs(Math.Sin(Environment.TickCount64 / 70.0)) : 0);
         if (level == mouth) return;
         mouth = level;
         current.Send(FormattableString.Invariant($"mouth {level:0.00}"));
@@ -1386,6 +1505,7 @@ internal sealed partial class PetWindow : Window
         e.Cancel = true;
         if (exiting) return;
         exiting = true;
+        CancelRightDrag();
         speech.Stop();
         if (player != null && image.Opacity > 0)
         {
@@ -1432,25 +1552,25 @@ internal sealed partial class PetWindow : Window
     private async Task<object> Run(string name, JsonElement args, CancellationToken token)
     {
         if (exiting) throw new InvalidOperationException("你正在告别，收起之后再叫你出来。");
+        if (name is "conversation_status" or "conversation_send" or "conversation_present" or "conversation_cancel" or "conversation_transcribe")
+            return await ConversationCommand(name, args, token);
+        if (name is "affection_settings" or "affection_set" or "affection_save" or "affection_reset")
+            return AffectionCommand(name, args);
+        if (name is "action_settings" or "action_save" or "action_reset" or "action_preview" or "action_adjust" or "action_end_adjust")
+            return ActionCommand(name, args);
+        if (name == "performance_library") return LibraryCommand(args);
+        if (name is "touch_lines" or "touch_lines_save" or "touch_lines_reset")
+            return TouchLinesCommand(name, args);
+        if (name is "touch_settings" or "touch_save" or "touch_delete" or "touch_reset" or "touch_preview")
+            return TouchCommand(name, args);
         if (Recorder.Active && name is not ("get_state" or "recent_events" or "look_back" or "recall"))
             Recorder.Event(name, args.ValueKind == JsonValueKind.Object ? args.Clone() : null); // 录制时记下工具调用（say、dress、show……）
         if (name is not ("get_state" or "quit" or "recent_events") && trouble != null && player == null) throw new InvalidOperationException(trouble);
         switch (name)
         {
             case "say":
-                Wake(); // 收着时一开口就出场
-                YieldMutter(); // 说话优先：收起正在显示的嘀咕，等待排队的这段时间里也不再嘀咕
-                var text = Tools.RequiredText(args, "text");
-                var bubbles = Line.Split(text);
-                // A line each, in turn; the call returns once the first has begun, the rest wait their turn whoever asked.
-                await InTurn(() => { SayLine(bubbles[0]); return Task.CompletedTask; }, token);
-                foreach (var next in bubbles.Skip(1))
-                    _ = InTurn(() => { if (!exiting) SayLine(next); return Task.CompletedTask; }, CancellationToken.None);
-                var note = Heard(bubbles);
-                // 兜底切过斜杠就说一声：不然模型下次照样写、永远不知道（本机加，2026-11-14）
-                if (Line.HasSlashBreak(text)) note += "这句里的“／”或“ / ”我按换行分成了几个气泡；下次一句一行，直接换行，别写斜杠。";
-                return Tools.Text(note.Length == 0 ? new { started = true, bubbles = bubbles.Count, said = Body.Strip(text) }
-                    : (object)new { started = true, bubbles = bubbles.Count, said = Body.Strip(text), note });
+                return await Say(Tools.RequiredText(args, "text"), Tools.OptionalText(args, "speech") ?? "",
+                    Tools.OptionalText(args, "audio") ?? "", token);
             case "look_in_mirror":
                 if (standby) throw new InvalidOperationException("你现在收起着，先用 show 出场再照镜子。");
                 if (hiddenForFullscreen) throw new InvalidOperationException("别的程序正全屏，你藏着没在画，镜子里只会是旧样子；等全屏退出再照（或者先 update_settings hide_on_fullscreen 设成 false）。"); // 本机修，2026-11-08
@@ -1486,6 +1606,13 @@ internal sealed partial class PetWindow : Window
                 var checkedNow = await updates.Check();
                 return Tools.Text(new { state = checkedNow.State, behind = checkedNow.Behind, changes = checkedNow.Changes, error = checkedNow.Error });
             case "update_settings":
+                string? requestedVoiceLanguage = null;
+                if (args.TryGetProperty("voice_language", out var voiceLanguage))
+                {
+                    if (voiceLanguage.ValueKind != JsonValueKind.String || voiceLanguage.GetString() is not ("auto" or "zh" or "ja"))
+                        throw new ArgumentException("配音语言只能是跟随台词、中文或日语。");
+                    requestedVoiceLanguage = voiceLanguage.GetString()!;
+                }
                 if (args.TryGetProperty("fps", out var fps) && fps.TryGetInt32(out var rate))
                 {
                     if (!Settings.FpsChoices.Contains(rate)) throw new ArgumentException("fps 只能是 30、60、90、120。");
@@ -1503,6 +1630,18 @@ internal sealed partial class PetWindow : Window
                 {
                     settings.BubbleSeconds = Settings.StayFor(stays); speech.Seconds = settings.BubbleSeconds;
                 }
+                var previousPlayback = PlaybackSettings;
+                if (requestedVoiceLanguage != null) settings.VoiceLanguage = requestedVoiceLanguage;
+                if (!args.TryGetProperty("voice_enabled", out var audioEnabled)
+                    || audioEnabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                    args.TryGetProperty("tts_enabled", out audioEnabled); // 旧接口指向同一个配音开关
+                if (audioEnabled.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    settings.VoiceEnabled = settings.TtsEnabled = audioEnabled.GetBoolean();
+                if (args.TryGetProperty("volume", out var volume) && volume.ValueKind == JsonValueKind.Number
+                    && volume.TryGetDouble(out var gain) && double.IsFinite(gain))
+                    settings.VoiceVolume = Math.Clamp(gain, 0, 1);
+                if (previousPlayback != PlaybackSettings) InvalidatePreparedVoice();
+                if (!VoiceOn) { speech.Mute(); mutterSpeech.Mute(); }
                 // Taken up at once: hidden behind a fullscreen program she comes back if it is turned off.
                 if (args.TryGetProperty("hide_on_fullscreen", out var hide) && hide.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 {
@@ -1579,13 +1718,14 @@ internal sealed partial class PetWindow : Window
                 _ = HideAway();
                 return Tools.Text(new { hiding = !standby });
             case "focus":
-                return FocusCommand(Tools.RequiredText(args, "action", 10));
+                return FocusCommand(Tools.RequiredText(args, "action", 10), args);
             case "remember": case "recall": case "forget": // 记忆小本本（本机加，2026-11-08）
                 return MemoryCommand(name, args);
             case "event": // Claude Code hooks 等外面的事件（本机加）：收着不叫她出场，演不演由 events.txt 和她当下忙不忙决定
                 return Event(args);
             case "panel":
-                Wake(); // 控制台点互动时，收着也出场（和说话一样）；空动作（reset）不会误唤出，因此下面单独处理
+                // 专注计时按所选模式决定是否出场，闹钟和时长设置留在后台。
+                if (Conversation.Text(args, "op") != "focus") Wake();
                 return Panel(args);
             default:
                 throw new ArgumentException("没有这个工具。");
@@ -1618,7 +1758,7 @@ internal sealed partial class PetWindow : Window
             focus.Now == FocusTimer.Phase.Work && (!def.Priority || BriefEvents.Contains(name)) && !FocusEvent(name) ? "在专注，不打扰" :
             events.Cooling(def, now) ? "冷却中" :
             // 在说话、放语音、哄睡演出、被面板摆着姿势：谁都让位
-            exiting || speech.IsSaying || silent != null || coaxAutoReturn || (panelHold && body.Posing) ? "她在说话或被摆着姿势" :
+            exiting || speech.IsSaying || speech.IsShowingReply || silent != null || coaxAutoReturn || (panelHold && body.Posing) ? "她在说话或被摆着姿势" :
             // 平常的事件只在她闲着时演；“优先”的可以打断闲时的嘀咕、小剧场、被碰的反应
             !def.Priority && (MutterBlocked || textIdleActive || behavior.Showing != null) ? "她在忙别的" : null;
         if (why != null) return Tools.Text(new { played = false, reason = why });
@@ -1665,7 +1805,7 @@ internal sealed partial class PetWindow : Window
         switch (op)
         {
             case "focus": // 番茄钟：开始 / 提前结束（本机加，2026-11-08）
-                return FocusCommand(Tools.RequiredText(args, "action", 10));
+                return FocusCommand(Tools.RequiredText(args, "action", 10), args);
             case "cue":
                 var cue = Tools.RequiredText(args, "cue", 120);
                 if (!Body.CueReadable(cue, 12)) throw new ArgumentException("读不懂这几个动作词：" + cue);
@@ -1736,12 +1876,15 @@ internal sealed partial class PetWindow : Window
     private object State() => new
     {
         shape = settings.Shape, shapeLabel = Shape.Label, wearing = Wearing(), fps = settings.Fps, scale = settings.Scale, tex_scale = settings.TexScale, bubble_scale = settings.BubbleScale, bubble_seconds = settings.BubbleSeconds,
-        hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, start_hidden = settings.StartHidden, keep_on_screen = settings.KeepOnScreen, follow_mouse = settings.FollowMouse,
+        voice_name = Conversation.VoiceName, voice_count = 0, voice_enabled = VoiceEnabled, volume = settings.VoiceVolume,
+        tts_enabled = VoiceEnabled, voice_language = settings.VoiceLanguage,
+        hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, hiding, start_hidden = settings.StartHidden, keep_on_screen = settings.KeepOnScreen, follow_mouse = settings.FollowMouse,
         check_updates = settings.CheckUpdates, music_dance = settings.MusicDance, dance_music_apps = settings.DanceMusicApps, dance_browser = settings.DanceBrowser, dance_strength = settings.DanceStrength, coax_sleep = settings.CoaxSleep, coax_lunch = settings.CoaxLunch, sleep_at = settings.SleepAt, lunch_at = settings.LunchAt, birthday = settings.Birthday,
         update = updates.Latest is { } found ? new { current = found.Current, latest = found.Latest, behind = found.Behind, changes = found.Changes, guide = found.Guide } : null,
         idle_seconds = settings.IdleSeconds, position = new { Left, Top }, saying = speech.IsSaying, reaction = behavior.Showing, trouble,
         clothes = Outfit.Clothes.Select(item => item.Label).ToArray(), accessories = Outfit.Accessories.Select(item => item.Label).ToArray(),
         overlays = body.Overlays.Except(poseOverlays).ToArray(), raw = panelRaw.ToArray(), hand = body.HandUp, held = body.HeldWords.ToArray(), // 托盘控制台用：脸上开着哪些表情、原版表情、手举着没有
+        library_revision = library.Revision,
         affection = AffectionState(), focus = FocusState(), memory = MemoryState(), // 亲密度、番茄钟、记忆条数（本机加，2026-11-08）
     };
 

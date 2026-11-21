@@ -15,6 +15,12 @@ tray/app/
 cache/
 check/
 settings.json
+conversation.local.json
+touch-settings.json
+action-settings.json
+touch-lines.json
+touch-lines.scoped.json
+.bridge-token
 errors.log
 api.json
 *.old
@@ -23,6 +29,7 @@ api.json
 
 # 每个人自己的大肥鱼：羁绊、记忆小本本（都只存在本机，绝不上传）
 affection.json
+affection-rules.json
 memory.json
 memory-archive.json
 
@@ -56,3 +63,17 @@ voice/ref/
 tools/
 启动语音服务.bat
 tray/tray.log
+# 私人的表演库由各栏按需导出。
+/performance-library.json
+/performance-library.json.*.tmp
+
+# 鱼眼（陪玩陪看，Fisheye 分支）：本机下载的模型、程序、Python 环境，和自己的 key、开关、日志
+fisheye/.venv/
+fisheye/models/
+fisheye/llama/
+fisheye/config.json
+fisheye/control.json
+fisheye/status.json
+fisheye/logs/
+fisheye/tests/
+fisheye/**/__pycache__/

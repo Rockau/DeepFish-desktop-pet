@@ -1,0 +1,7 @@
+{
+  "legacyRoot": "C:/path/to/companion-bridge",
+  "python": "C:/path/to/python.exe",
+  "ollama": null,
+  "ttsLauncher": null,
+  "asrLauncher": null
+}

@@ -1,6 +1,7 @@
 <Window x:Class="FishTray.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:FishTray"
         Title="DeepFish" Width="400" SizeToContent="Height"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" ShowInTaskbar="False" Topmost="False"
@@ -47,7 +48,6 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <Image x:Name="Logo" Width="34" Height="34" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
                             <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
@@ -57,13 +57,12 @@
                                     <TextBlock x:Name="StatusText" Text="连接中…" Style="{StaticResource Caption}"/>
                                 </StackPanel>
                             </StackPanel>
-                            <ToggleButton x:Name="PinButton" Grid.Column="2" Style="{StaticResource PinDot}" VerticalAlignment="Top" Margin="0,0,2,0"/>
-                            <Button x:Name="MinButton" Grid.Column="3" Style="{StaticResource MinDot}" VerticalAlignment="Top" Margin="0,0,2,0" Visibility="Collapsed" ToolTip="最小化到任务栏"/>
-                            <Button x:Name="CloseButton" Grid.Column="4" Style="{StaticResource CloseDot}" VerticalAlignment="Top"/>
+                            <Button x:Name="MinButton" Grid.Column="2" Style="{StaticResource MinDot}" VerticalAlignment="Top" Margin="0,0,2,0" Visibility="Collapsed" ToolTip="最小化到任务栏"/>
+                            <Button x:Name="CloseButton" Grid.Column="3" Style="{StaticResource CloseDot}" VerticalAlignment="Top"/>
                         </Grid>
 
                         <!-- 搜索：输入后只显示匹配的表情、动作、小剧场 -->
-                        <Border Margin="0,12,8,0" CornerRadius="10" Background="{StaticResource InputBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" x:Name="SearchBorder">
+                        <Border Margin="0,12,8,0" CornerRadius="10" Background="{StaticResource InputBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" x:Name="SearchBorder" Visibility="Collapsed">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -85,21 +84,6 @@
                 <ScrollViewer x:Name="Scroller" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
                 <StackPanel Margin="22,14,22,12">
 
-                    <!-- 平时的设置：搜索时先收起，让出地方给结果 -->
-                    <StackPanel x:Name="SettingsArea">
-
-                    <!-- 出场开关 -->
-                    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,12">
-                        <Grid>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="在桌面上出场" FontSize="14" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="ShowHint" Text="关掉就收起，她在后台待命" Style="{StaticResource Caption}" Margin="0,3,0,0"/>
-                            </StackPanel>
-                            <ToggleButton x:Name="ShowSwitch" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                        </Grid>
-                    </Border>
-
-                    <!-- 陪伴：羁绊（竖条纹进度条 + 五个节点）+ 番茄钟（本机加，2026-11-08；羁绊条 2026-11-13 改版） -->
                     <Border x:Name="BondCard" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14,16,14" Margin="0,0,0,12">
                         <StackPanel>
                             <!-- 羁绊 -->
@@ -109,26 +93,16 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <!-- 羁绊图标：五级各一个，同一条虎鲸尾巴逐级升级（BondIcon.cs 里画） -->
+                                <!-- 羁绊图标：同一条虎鲸尾巴逐级变化（BondIcon.cs 里画） -->
                                 <Border x:Name="BondIconHost" Width="40" Height="40" VerticalAlignment="Center"/>
                                 <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock x:Name="LevelName" Text="初识" FontSize="14" FontWeight="SemiBold"/>
-                                        <Border CornerRadius="7" Padding="6,1" Margin="7,1,0,0" VerticalAlignment="Center" Background="#337CC4FF" BorderBrush="#667CC4FF" BorderThickness="1">
-                                            <TextBlock x:Name="LevelBadge" Text="Lv1" FontSize="10.5" FontWeight="SemiBold" Foreground="#BFE3FF"/>
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock x:Name="LevelHint" Text="羁绊 · 多陪陪她，会慢慢加深" Style="{StaticResource Caption}" Margin="0,2,0,0"/>
+                                    <TextBlock Text="关系值" FontSize="15" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="LevelHint" Text="初识" Style="{StaticResource Caption}" Margin="0,3,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
-                                <!-- 右边只放羁绊值，不再写 / 200（进度看下面的条）；下面是今天的涨跌 -->
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
-                                    <TextBlock x:Name="PointsText" Text="0" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Right"/>
-                                    <Border x:Name="TodayChip" CornerRadius="7" Padding="6,1" Margin="0,2,0,0" HorizontalAlignment="Right" Background="#1AFFFFFF">
-                                        <TextBlock x:Name="TodayText" Text="今天还没变" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource SubBrush}"/>
-                                    </Border>
-                                </StackPanel>
+                                <TextBlock x:Name="PointsText" Grid.Column="2" Text="0" FontSize="23" FontWeight="SemiBold"
+                                           Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource AccentBrush}"/>
                             </Grid>
-                            <!-- 羁绊条：整条是五个等级走到哪了，竖条纹，亮度往前端渐强（样子照用户给的参考图） -->
+                            <!-- 羁绊条：查看好感到了哪一档，竖条纹，亮度往前端渐强（样子照用户给的参考图） -->
                             <Border x:Name="BondTrack" Height="22" Margin="0,13,0,0" CornerRadius="11" Background="#060C26" BorderBrush="#6FA8E8" BorderThickness="1.4" SnapsToDevicePixels="True">
                                 <Border.Resources>
                                     <DrawingBrush x:Key="BondStripes" TileMode="Tile" Viewport="0,0,6,40" ViewportUnits="Absolute" Viewbox="0,0,6,40" ViewboxUnits="Absolute">
@@ -152,72 +126,151 @@
                                     </Border>
                                 </Grid>
                             </Border>
-                            <!-- 五个节点和名字：节点在代码里按条的宽度摆 -->
+                            <!-- 各档的节点和名字 -->
                             <Canvas x:Name="BondNodes" Height="34" Margin="0,5,0,0"/>
+                        </StackPanel>
+                    </Border>
 
-                            <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,13,0,13" Opacity="0.8"/>
-
-                            <!-- 番茄钟 -->
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid Width="50" Height="50" VerticalAlignment="Center">
-                                    <Ellipse Stroke="#1F3166" StrokeThickness="4"/>
-                                    <Path x:Name="FocusArc" Stroke="{StaticResource AccentBrush}" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round">
-                                        <Path.Effect><DropShadowEffect x:Name="FocusGlow" Color="#7CC4FF" BlurRadius="8" ShadowDepth="0" Opacity="0.6"/></Path.Effect>
-                                    </Path>
-                                    <TextBlock x:Name="FocusTime" Text="25" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White"/>
-                                </Grid>
-                                <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
-                                    <TextBlock x:Name="FocusTitle" Text="专注陪伴" FontSize="14" FontWeight="SemiBold"/>
-                                    <TextBlock x:Name="FocusHint" Text="她戴上眼镜陪你认真 25 分钟" Style="{StaticResource Caption}" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" CornerRadius="14"
+                            BorderThickness="1" Padding="16,13" Margin="0,0,0,12">
+                        <StackPanel>
+                            <DockPanel LastChildFill="True">
+                                <Button x:Name="FocusButton" DockPanel.Dock="Right" Style="{StaticResource PillAccent}"
+                                        Content="开始" MinWidth="64" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                <StackPanel>
+                                    <TextBlock x:Name="FocusTitle" Text="专注计时" FontSize="14" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="FocusTime" Text="25:00" FontSize="27" FontWeight="SemiBold" Margin="0,2,0,0"
+                                               Foreground="{StaticResource AccentBrush}" Typography.NumeralAlignment="Tabular"/>
                                 </StackPanel>
-                                <Button x:Name="FocusButton" Grid.Column="2" Style="{StaticResource PillAccent}" Content="开始" VerticalAlignment="Center"/>
-                            </Grid>
+                            </DockPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                                <ComboBox x:Name="FocusModePicker" MinWidth="100" Style="{StaticResource Picker}"
+                                          DisplayMemberPath="Label" SelectedValuePath="Id" AutomationProperties.Name="计时方式"/>
+                                <StackPanel x:Name="FocusMinutesRow" Orientation="Horizontal" Margin="9,0,0,0">
+                                    <TextBox x:Name="FocusMinutesInput" Text="25" Width="55" MaxLength="3" Padding="7,4"
+                                             Background="{StaticResource InputBrush}" Foreground="{StaticResource TextBrush}"
+                                             BorderBrush="{StaticResource LineBrush}" CaretBrush="{StaticResource AccentBrush}"
+                                             VerticalContentAlignment="Center" AutomationProperties.Name="倒计时分钟数"
+                                             ToolTip="1 到 180 分钟，按回车或开始时保存"/>
+                                    <TextBlock Text="分钟" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                </StackPanel>
+                                <StackPanel x:Name="FocusClockRow" Visibility="Collapsed" Orientation="Horizontal" Margin="9,0,0,0">
+                                    <StackPanel.Resources>
+                                        <Style x:Key="ClockPart" TargetType="Border">
+                                            <Setter Property="Background" Value="{StaticResource InputBrush}"/>
+                                            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+                                            <Setter Property="BorderThickness" Value="1"/>
+                                            <Setter Property="CornerRadius" Value="6"/>
+                                        </Style>
+                                        <Style x:Key="ClockNumber" TargetType="TextBox">
+                                            <Setter Property="Width" Value="32"/>
+                                            <Setter Property="MaxLength" Value="2"/>
+                                            <Setter Property="Padding" Value="2,0"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                            <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}"/>
+                                            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                        </Style>
+                                        <Style x:Key="ClockArrow" TargetType="RepeatButton">
+                                            <Setter Property="Width" Value="19"/>
+                                            <Setter Property="Height" Value="15"/>
+                                            <Setter Property="Delay" Value="350"/>
+                                            <Setter Property="Interval" Value="95"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                            <Setter Property="Cursor" Value="Hand"/>
+                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+                                            <Setter Property="BorderThickness" Value="1,0,0,0"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="RepeatButton">
+                                                        <Border x:Name="ArrowFace" BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}" Background="{TemplateBinding Background}">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="ArrowFace" Property="Background" Value="{StaticResource CardLineBrush}"/>
+                                                            </Trigger>
+                                                            <Trigger Property="IsEnabled" Value="False">
+                                                                <Setter TargetName="ArrowFace" Property="Opacity" Value="0.4"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </StackPanel.Resources>
+                                    <Border Style="{StaticResource ClockPart}">
+                                        <DockPanel>
+                                            <StackPanel DockPanel.Dock="Right">
+                                                <RepeatButton x:Name="FocusHourUp" Content="▴" Style="{StaticResource ClockArrow}" AutomationProperties.Name="小时加一"/>
+                                                <RepeatButton x:Name="FocusHourDown" Content="▾" Style="{StaticResource ClockArrow}" BorderThickness="1,1,0,0"
+                                                              AutomationProperties.Name="小时减一"/>
+                                            </StackPanel>
+                                            <TextBox x:Name="FocusHourInput" Style="{StaticResource ClockNumber}" AutomationProperties.Name="小时"/>
+                                        </DockPanel>
+                                    </Border>
+                                    <TextBlock Text="时" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="5,0,7,0"/>
+                                    <Border Style="{StaticResource ClockPart}">
+                                        <DockPanel>
+                                            <StackPanel DockPanel.Dock="Right">
+                                                <RepeatButton x:Name="FocusMinuteUp" Content="▴" Style="{StaticResource ClockArrow}" AutomationProperties.Name="分钟加一"/>
+                                                <RepeatButton x:Name="FocusMinuteDown" Content="▾" Style="{StaticResource ClockArrow}" BorderThickness="1,1,0,0"
+                                                              AutomationProperties.Name="分钟减一"/>
+                                            </StackPanel>
+                                            <TextBox x:Name="FocusMinuteInput" Style="{StaticResource ClockNumber}" AutomationProperties.Name="分钟"/>
+                                        </DockPanel>
+                                    </Border>
+                                    <TextBlock Text="分" Style="{StaticResource Caption}" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock x:Name="FocusHint" Style="{StaticResource Caption}" Visibility="Collapsed" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                    <ComboBox x:Name="SettingsPicker" Style="{StaticResource Picker}" DisplayMemberPath="Label" SelectedValuePath="Id"
+                              AutomationProperties.Name="设置" Padding="12,7" Margin="0,0,0,12"/>
+
+                    <Border x:Name="RelationshipDetails" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,10">
+                        <StackPanel>
+                            <local:AffectionSettingsPanel x:Name="AffectionSettings"/>
+                            <Button x:Name="TouchLinesShortcut" Content="互动台词" Style="{StaticResource Ghost}" HorizontalAlignment="Left" Margin="0,10,0,0"/>
                         </StackPanel>
                     </Border>
 
-                    <!-- 外观 -->
-                    <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14,16,8" Margin="0,0,0,6">
-                        <StackPanel>
+                    <StackPanel x:Name="AppearanceDetails" Visibility="Collapsed">
+                        <!-- 出场开关 -->
+                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,12">
                             <Grid>
-                                <TextBlock Text="大小" Style="{StaticResource Caption}"/>
-                                <TextBlock x:Name="ScaleValue" Text="1.5×" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="在桌面上出场" FontSize="14" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="ShowHint" Text="关掉就收起，她在后台待命" Style="{StaticResource Caption}" Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <ToggleButton x:Name="ShowSwitch" Style="{StaticResource Switch}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                             </Grid>
-                            <Slider x:Name="ScaleSlider" Style="{StaticResource StarSlider}" Minimum="0.5" Maximum="2" SmallChange="0.1" LargeChange="0.1" TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
-                            <Grid x:Name="ScaleMarks" Height="18" Margin="0,0,0,14"/>
+                        </Border>
 
-                            <TextBlock Text="体型" Style="{StaticResource Caption}"/>
-                            <Border x:Name="ShapeHost" Background="#6608102F" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Margin="0,8,0,16"/>
+                        <!-- 外观 -->
+                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14,16,8" Margin="0,0,0,6">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="大小" Style="{StaticResource Caption}"/>
+                                    <TextBlock x:Name="ScaleValue" Text="1.5×" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                </Grid>
+                                <Slider x:Name="ScaleSlider" Style="{StaticResource StarSlider}" Minimum="0.5" Maximum="2" SmallChange="0.1" LargeChange="0.1" TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
+                                <Grid x:Name="ScaleMarks" Height="18" Margin="0,0,0,14"/>
 
-                            <TextBlock Text="衣服和配饰" Style="{StaticResource Caption}" Margin="0,0,0,10"/>
-                            <WrapPanel x:Name="DressPanel"/>
-                        </StackPanel>
-                    </Border>
+                                <TextBlock Text="体型" Style="{StaticResource Caption}"/>
+                                <Border x:Name="ShapeHost" Background="#6608102F" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Margin="0,8,0,16"/>
 
-                    </StackPanel>
+                                <TextBlock Text="衣服和配饰" Style="{StaticResource Caption}" Margin="0,0,0,10"/>
+                                <WrapPanel x:Name="DressPanel"/>
+                            </StackPanel>
+                        </Border>
 
-                    <!-- 常用：右键任意按钮加入 / 移出 -->
-                    <Border x:Name="FavCard" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,12,16,4" Margin="0,6,0,12">
-                        <StackPanel>
-                            <TextBlock Text="★ 常用" Style="{StaticResource Caption}" Margin="0,0,0,10"/>
-                            <WrapPanel x:Name="FavPanel"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 表情 / 动作 / 小剧场：可展开收起 -->
-                    <StackPanel x:Name="SectionsHost"/>
-                    <TextBlock x:Name="FavHint" Text="小技巧：右键点任意按钮，加入“★ 常用”，常用的就摆在最上面。" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="4,0,4,8"/>
-                    <TextBlock x:Name="EmptyHint" Visibility="Collapsed" Text="没有找到，换个词试试。" Style="{StaticResource Caption}" Margin="4,8,4,8"/>
-
-                    <StackPanel x:Name="MoreArea">
-                    <ToggleButton x:Name="MoreToggle" Style="{StaticResource MoreRow}"/>
-
-                    <!-- 更多设置 -->
-                    <StackPanel x:Name="MorePanel" Visibility="Collapsed">
                         <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,14,16,14" Margin="0,2,0,12">
                             <StackPanel>
                                 <TextBlock Text="流畅度（帧率）" Style="{StaticResource Caption}"/>
@@ -225,13 +278,6 @@
 
                                 <TextBlock Text="清晰度（立绘）" Style="{StaticResource Caption}"/>
                                 <Border x:Name="QualityHost" Background="#6608102F" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Margin="0,8,0,16"/>
-
-                                <Grid>
-                                    <TextBlock Text="小动作间隔" Style="{StaticResource Caption}"/>
-                                    <TextBlock x:Name="IdleValue" Text="40 秒" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
-                                </Grid>
-                                <Slider x:Name="IdleSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="15" SmallChange="1" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
-                                <Grid x:Name="IdleMarks" Height="18" Margin="0,0,0,14"/>
 
                                 <Grid>
                                     <TextBlock Text="气泡大小" Style="{StaticResource Caption}"/>
@@ -245,8 +291,99 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,6" Margin="0,0,0,12">
+                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,10">
                             <StackPanel>
+                                <Grid Margin="0,8">
+                                    <TextBlock Text="视线跟着鼠标" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwFollow" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,8">
+                                    <TextBlock Text="别的程序全屏时藏起来" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwFull" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,8">
+                                    <TextBlock Text="跟随 Agent 一起启动" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwStartHidden" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,8">
+                                    <TextBlock Text="拖到屏幕边弹回来" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwKeepOn" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,8">
+                                    <TextBlock Text="在任务栏显示面板" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwTaskbar" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,8">
+                                    <TextBlock Text="面板保持在最前" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="PinButton" Style="{StaticResource Switch}" HorizontalAlignment="Right"
+                                                  AutomationProperties.Name="面板保持在最前"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ActionsDetails" Visibility="Collapsed">
+                        <!-- 常用：右键任意按钮加入 / 移出 -->
+                        <Border x:Name="FavCard" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,12,16,4" Margin="0,6,0,12">
+                            <StackPanel>
+                                <TextBlock Text="★ 常用" Style="{StaticResource Caption}" Margin="0,0,0,10"/>
+                                <WrapPanel x:Name="FavPanel"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 表情 / 动作 / 小剧场：可展开收起 -->
+                        <StackPanel x:Name="SectionsHost"/>
+                        <TextBlock x:Name="FavHint" Text="小技巧：右键点任意按钮，加入“★ 常用”，常用的就摆在最上面。" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="4,0,4,8"/>
+                        <TextBlock x:Name="EmptyHint" Visibility="Collapsed" Text="没有找到，换个词试试。" Style="{StaticResource Caption}" Margin="4,8,4,8"/>
+
+                        <Button x:Name="ResetButton" Style="{StaticResource Ghost}" Content="恢复默认表情" Margin="0,0,0,8"/>
+                    </StackPanel>
+
+                    <Border x:Name="TouchDetails" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,10">
+                        <local:TouchSettingsPanel x:Name="TouchSettings"/>
+                    </Border>
+
+                    <Border x:Name="VoiceDetails" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,10">
+                        <StackPanel x:Name="VoiceSettings">
+                            <Grid Margin="0,6">
+                                <TextBlock Text="藤田琴音配音" VerticalAlignment="Center"/>
+                                <ToggleButton x:Name="SwVoiceEnabled" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <Grid Margin="0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="配音语言" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="VoiceLanguagePicker" Grid.Column="1" MinWidth="102" SelectedValuePath="Tag"
+                                          Style="{StaticResource Picker}" AutomationProperties.Name="配音语言">
+                                    <ComboBoxItem Tag="auto" Content="跟随台词"/>
+                                    <ComboBoxItem Tag="ja" Content="日语"/>
+                                    <ComboBoxItem Tag="zh" Content="中文"/>
+                                </ComboBox>
+                            </Grid>
+                            <Grid Margin="0,4,0,0">
+                                <TextBlock Text="音量" Style="{StaticResource Caption}"/>
+                                <TextBlock x:Name="VoiceVolumeValue" HorizontalAlignment="Right" Style="{StaticResource Caption}"/>
+                            </Grid>
+                            <Slider x:Name="VoiceVolumeSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="1"
+                                    Value="0.25" SmallChange=".05" LargeChange=".1" TickFrequency=".05" IsSnapToTickEnabled="True"/>
+                            <Grid x:Name="VoiceVolumeMarks" Height="18"/>
+                            <Border Height="1" Margin="0,12,0,4" Background="{StaticResource LineBrush}" Opacity="0.6"/>
+                            <local:ConversationPanel x:Name="ConversationSettings"/>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel x:Name="BehaviorDetails" Visibility="Collapsed">
+                        <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,10">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="小动作间隔" Style="{StaticResource Caption}"/>
+                                    <TextBlock x:Name="IdleValue" Text="40 秒" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                </Grid>
+                                <Slider x:Name="IdleSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="15" SmallChange="1" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
+                                <Grid x:Name="IdleMarks" Height="18" Margin="0,0,0,14"/>
+
                                 <!-- 随音乐摇摆：点开选认哪些声音；右边小字写着现在认的是哪几类（2026-11-17） -->
                                 <ToggleButton x:Name="DanceFold" Style="{StaticResource SubFold}">
                                     <StackPanel Orientation="Horizontal">
@@ -267,88 +404,97 @@
                                     <TextBlock Text="摇摆强度" Style="{StaticResource Caption}" Margin="0,8,0,0"/>
                                     <Border x:Name="StrengthHost" Background="#6608102F" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10" Margin="0,8,0,6"/>
                                 </StackPanel>
-                                <Grid Margin="0,8">
-                                    <TextBlock Text="视线跟着鼠标" VerticalAlignment="Center"/>
-                                    <ToggleButton x:Name="SwFollow" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                </Grid>
-                                <Grid Margin="0,8">
-                                    <TextBlock Text="别的程序全屏时藏起来" VerticalAlignment="Center"/>
-                                    <ToggleButton x:Name="SwFull" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                </Grid>
-                                <Grid Margin="0,8">
-                                    <TextBlock Text="跟随 Agent 一起启动" VerticalAlignment="Center"/>
-                                    <ToggleButton x:Name="SwStartHidden" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                </Grid>
-                                <Grid Margin="0,8">
-                                    <TextBlock Text="拖到屏幕边弹回来" VerticalAlignment="Center"/>
-                                    <ToggleButton x:Name="SwKeepOn" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                </Grid>
-                                <!-- 睡觉提醒：默认折叠，标题右边写着几点（关着写“已关闭”）；点开是开关和时间滑块（2026-11-18） -->
-                                <ToggleButton x:Name="SleepFold" Style="{StaticResource SubFold}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="睡觉提醒" VerticalAlignment="Center"/>
-                                        <StackPanel x:Name="SleepTags" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,0"/>
-                                    </StackPanel>
-                                </ToggleButton>
-                                <StackPanel x:Name="SleepPanel" Visibility="Collapsed" Margin="14,0,0,4">
-                                    <Grid Margin="0,6">
-                                        <TextBlock Text="开启睡觉提醒" VerticalAlignment="Center" Foreground="{StaticResource SubBrush}"/>
-                                        <ToggleButton x:Name="SwCoaxSleep" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                    </Grid>
-                                    <StackPanel x:Name="SleepSliderBox" Margin="0,4,0,4">
-                                        <Grid>
-                                            <TextBlock Text="几点开始提醒" Style="{StaticResource Caption}"/>
-                                            <TextBlock x:Name="SleepSliderValue" Text="" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
-                                        </Grid>
-                                        <Slider x:Name="SleepSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="16" Value="10" SmallChange="1" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
-                                        <Grid x:Name="SleepSliderMarks" Height="18"/>
-                                    </StackPanel>
-                                </StackPanel>
-                                <!-- 午饭提醒：默认折叠，标题右边写着几点（关着写“已关闭”）；点开是开关和时间滑块（2026-11-18） -->
-                                <ToggleButton x:Name="LunchFold" Style="{StaticResource SubFold}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="午饭提醒" VerticalAlignment="Center"/>
-                                        <StackPanel x:Name="LunchTags" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,0"/>
-                                    </StackPanel>
-                                </ToggleButton>
-                                <StackPanel x:Name="LunchPanel" Visibility="Collapsed" Margin="14,0,0,4">
-                                    <Grid Margin="0,6">
-                                        <TextBlock Text="开启午饭提醒" VerticalAlignment="Center" Foreground="{StaticResource SubBrush}"/>
-                                        <ToggleButton x:Name="SwCoaxLunch" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                    </Grid>
-                                    <StackPanel x:Name="LunchSliderBox" Margin="0,4,0,4">
-                                        <Grid>
-                                            <TextBlock Text="几点提醒" Style="{StaticResource Caption}"/>
-                                            <TextBlock x:Name="LunchSliderValue" Text="" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
-                                        </Grid>
-                                        <Slider x:Name="LunchSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="10" Value="2" SmallChange="1" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
-                                        <Grid x:Name="LunchSliderMarks" Height="18"/>
-                                    </StackPanel>
-                                </StackPanel>
-                                <Grid Margin="0,8">
-                                    <TextBlock Text="在任务栏显示面板" VerticalAlignment="Center"/>
-                                    <ToggleButton x:Name="SwTaskbar" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
-                                </Grid>
                             </StackPanel>
                         </Border>
+                        <!-- 陪玩陪看（鱼眼，本机加 2026-11-18）：单独一栏，默认折叠；标题右边小字写着开没开，点开是开关、话量滑块和她现在在看什么 -->
+                        <Border x:Name="EyeCard" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,6" Margin="0,0,0,12">
+                            <StackPanel>
+                                <ToggleButton x:Name="EyeFold" Style="{StaticResource SubFold}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="陪玩陪看" VerticalAlignment="Center"/>
+                                        <StackPanel x:Name="EyeTags" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,0"/>
+                                    </StackPanel>
+                                </ToggleButton>
+                                <StackPanel x:Name="EyePanel" Visibility="Collapsed" Margin="14,0,0,8">
+                                    <Grid Margin="0,6">
+                                        <TextBlock Text="开启陪玩陪看" VerticalAlignment="Center" Foreground="{StaticResource SubBrush}"/>
+                                        <ToggleButton x:Name="SwEye" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <StackPanel x:Name="EyeSliderBox" Margin="0,4,0,4">
+                                        <Grid>
+                                            <TextBlock Text="话多话少" Style="{StaticResource Caption}"/>
+                                            <TextBlock x:Name="EyeSliderValue" Text="" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                        </Grid>
+                                        <Slider x:Name="EyeSlider" Style="{StaticResource StarSlider}" Minimum="0.5" Maximum="2" Value="1" SmallChange="0.1" LargeChange="0.1" TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
+                                        <Grid x:Name="EyeSliderMarks" Height="18"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="EyeNote" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
 
-                        <!-- 最底下：检查更新（动作，不是开关；结果就写在按钮下面） -->
+                    <Border x:Name="ReminderDetails" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,10">
+                        <StackPanel>
+                            <!-- 睡觉提醒：默认折叠，标题右边写着几点（关着写“已关闭”）；点开是开关和时间滑块（2026-11-18） -->
+                            <ToggleButton x:Name="SleepFold" Style="{StaticResource SubFold}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="睡觉提醒" VerticalAlignment="Center"/>
+                                    <StackPanel x:Name="SleepTags" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,0"/>
+                                </StackPanel>
+                            </ToggleButton>
+                            <StackPanel x:Name="SleepPanel" Visibility="Collapsed" Margin="14,0,0,4">
+                                <Grid Margin="0,6">
+                                    <TextBlock Text="开启睡觉提醒" VerticalAlignment="Center" Foreground="{StaticResource SubBrush}"/>
+                                    <ToggleButton x:Name="SwCoaxSleep" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <StackPanel x:Name="SleepSliderBox" Margin="0,4,0,4">
+                                    <Grid>
+                                        <TextBlock Text="几点开始提醒" Style="{StaticResource Caption}"/>
+                                        <TextBlock x:Name="SleepSliderValue" Text="" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                    </Grid>
+                                    <Slider x:Name="SleepSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="16" Value="10" SmallChange="1" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
+                                    <Grid x:Name="SleepSliderMarks" Height="18"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <!-- 午饭提醒：默认折叠，标题右边写着几点（关着写“已关闭”）；点开是开关和时间滑块（2026-11-18） -->
+                            <ToggleButton x:Name="LunchFold" Style="{StaticResource SubFold}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="午饭提醒" VerticalAlignment="Center"/>
+                                    <StackPanel x:Name="LunchTags" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,0"/>
+                                </StackPanel>
+                            </ToggleButton>
+                            <StackPanel x:Name="LunchPanel" Visibility="Collapsed" Margin="14,0,0,4">
+                                <Grid Margin="0,6">
+                                    <TextBlock Text="开启午饭提醒" VerticalAlignment="Center" Foreground="{StaticResource SubBrush}"/>
+                                    <ToggleButton x:Name="SwCoaxLunch" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <StackPanel x:Name="LunchSliderBox" Margin="0,4,0,4">
+                                    <Grid>
+                                        <TextBlock Text="几点提醒" Style="{StaticResource Caption}"/>
+                                        <TextBlock x:Name="LunchSliderValue" Text="" HorizontalAlignment="Right" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                                    </Grid>
+                                    <Slider x:Name="LunchSlider" Style="{StaticResource StarSlider}" Minimum="0" Maximum="10" Value="2" SmallChange="1" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,4,0,0"/>
+                                    <Grid x:Name="LunchSliderMarks" Height="18"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="UpdateDetails" Visibility="Collapsed" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource CardLineBrush}" BorderThickness="1" CornerRadius="14" Padding="16,13" Margin="0,0,0,10">
                         <StackPanel Margin="0,0,0,14">
                             <Button x:Name="UpdateButton" Style="{StaticResource Ghost}" Content="检查更新" HorizontalAlignment="Left" Padding="18,7"/>
                             <TextBlock x:Name="UpdateNote" Style="{StaticResource Caption}" Margin="2,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
                         </StackPanel>
-
-                    </StackPanel>
-                    </StackPanel>
+                    </Border>
 
                 </StackPanel>
                 </ScrollViewer>
 
-                <!-- 固定底栏：一键恢复默认表情 -->
-                <Border x:Name="Footer" Grid.Row="2" BorderThickness="0,1,0,0" BorderBrush="{StaticResource LineBrush}" Background="#80050A1C" Padding="22,10,22,12">
+                <!-- 操作结果有消息时才使用底栏。 -->
+                <Border x:Name="Footer" Grid.Row="2" Visibility="{Binding Visibility, ElementName=Toast}" BorderThickness="0,1,0,0" BorderBrush="{StaticResource LineBrush}" Background="#80050A1C" Padding="22,10,22,12">
                     <StackPanel>
-                        <TextBlock x:Name="Toast" Text="" Style="{StaticResource Caption}" Foreground="{StaticResource AccentBrush}" Margin="2,0,0,7" Visibility="Collapsed"/>
-                        <Button x:Name="ResetButton" Style="{StaticResource Ghost}" Content="恢复默认表情"/>
+                        <TextBlock x:Name="Toast" Text="" Style="{StaticResource Caption}" Foreground="{StaticResource AccentBrush}" Margin="2,0,0,0" Visibility="Collapsed"/>
                     </StackPanel>
                 </Border>
             </Grid>

@@ -330,7 +330,9 @@ internal sealed partial class Body
     // those take, 0 for none), bigger and quicker before a "！", smaller and slower before "……" (tone), unless she
     // says 微/大/快/慢 herself. Her words wait only for it to begin, a hand to come up, a jump to land; with
     // nothing to say after it, for all of it.
-    internal double Apply(string cue, double spoken = 0, char tone = '\0')
+    internal double Apply(string cue, double spoken = 0, char tone = '\0') => Apply(cue, spoken, tone, plainFace: false);
+
+    internal double Apply(string cue, double spoken, char tone, bool plainFace)
     {
         // 展开组合词（比如「高兴」→「张嘴 眯眼笑 晃头」）
         cue = string.Join(' ', cue.Split([' ', '　', '、', '，', ','], StringSplitOptions.RemoveEmptyEntries)
@@ -377,7 +379,8 @@ internal sealed partial class Body
             if (word.Reset) Relax();
             foreach (var place in word.Clear ?? []) channels.Remove(place);
             if (word.Channel is { } channel) { channels[channel] = word.Hold!; wordOf[channel] = name; }
-            if (word.Overlay is { } overlay && overlays.Add(overlay)) send($"exp {overlay} 1");
+            if (word.Overlay is { } overlay && (!plainFace || overlay == "黑脸") && overlays.Add(overlay))
+                send($"exp {overlay} 1");
             if (word.HandDown) PutHandDown();
             if (word.Hand is { } up && hand != up) { PutHandDown(); hand = up; send($"motion {up.On}"); }
             foreach (var (id, keys) in move ?? []) send($"anim {id} {keys}");
@@ -510,9 +513,13 @@ internal sealed class Line
         return lines;
     }
 
-    internal Line(string text, Func<string, double, char, double> act, double charactersPerSecond = CharactersPerSecond)
+    private readonly bool followsAudio;
+
+    internal Line(string text, Func<string, double, char, double> act, double charactersPerSecond = CharactersPerSecond,
+        double? audioSeconds = null)
     {
         this.act = act;
+        followsAudio = audioSeconds.HasValue;
         var plain = new System.Text.StringBuilder();
         foreach (var (cue, words) in Body.Parts(text))
         {
@@ -528,6 +535,16 @@ internal sealed class Line
         }
         Plain = plain.ToString();
         Spoken = steps.Sum(step => step.Seconds);
+        if (Spoken > 0 && audioSeconds is > 0)
+        {
+            double scale = audioSeconds.Value / Spoken;
+            for (int i = 0; i < steps.Count; i++)
+            {
+                var step = steps[i];
+                steps[i] = (step.Cue, step.End, step.Seconds * scale, step.Talks);
+            }
+            Spoken = audioSeconds.Value;
+        }
     }
 
     // The words between a cue and the next: how long they take to say, and whether they are said with a "！" or trail off.
@@ -564,7 +581,8 @@ internal sealed class Line
             {
                 var (spoken, tone) = After(index);
                 double wait = act(cue, spoken, tone);
-                at += wait;
+                // A recorded sentence keeps playing through its gestures. A trailing gesture can still finish.
+                if (!followsAudio || spoken == 0) at += wait;
                 index++;
                 continue;
             }

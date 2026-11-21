@@ -1,0 +1,31 @@
+{
+  "说明": "第一次运行会把这个文件复制成 config.json，在 config.json 里改。deepseek_api_key 留空的话，会用大肥鱼插件 settings.json 里的 LlmApiKey。",
+  "plugin_dir": "..",
+  "deepseek_api_key": "",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "deepseek_model": "deepseek-chat",
+  "vision_url": "http://127.0.0.1:8091",
+  "ollama_model": "",
+  "ollama_executable": "",
+  "llama_server": "llama/llama-server.exe",
+  "vision_model": "models/Qwen3VL-8B-Instruct-Q4_K_M.gguf",
+  "vision_mmproj": "models/mmproj-Qwen3VL-8B-Instruct-F16.gguf",
+  "chattiness": 1.0,
+  "show_on_start": true,
+  "unhide_in_fullscreen": true,
+  "dry_run": false,
+  "ignore_apps": [
+    "wechat.exe",
+    "weixin.exe",
+    "qq.exe",
+    "tim.exe",
+    "dingtalk.exe",
+    "feishu.exe",
+    "lark.exe",
+    "telegram.exe",
+    "keepass.exe",
+    "1password.exe",
+    "bitwarden.exe",
+    "alipay.exe"
+  ]
+}

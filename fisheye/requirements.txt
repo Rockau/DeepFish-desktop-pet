@@ -1,0 +1,6 @@
+mss>=10,<11
+pillow>=11
+numpy>=2
+requests>=2.31
+rapidocr>=3.4,<4
+onnxruntime>=1.20
