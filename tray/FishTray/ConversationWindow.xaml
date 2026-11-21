@@ -1,0 +1,76 @@
+<UserControl x:Class="FishTray.ConversationPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True" Foreground="{StaticResource TextBrush}" FontFamily="{StaticResource UiFont}">
+    <UserControl.Resources>
+        <Style x:Key="ConversationField" TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource InputBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+        <Style x:Key="ConversationSend" TargetType="Button" BasedOn="{StaticResource PillAccent}">
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.45"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    <Grid Margin="0,8,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="ConnectionStatus" Text="正在检查连接…" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <Button x:Name="RefreshButton" Grid.Column="1" Content="刷新" Style="{StaticResource Ghost}"/>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="对话模型" Style="{StaticResource Caption}" Margin="0,0,0,4"/>
+            <ComboBox x:Name="ProviderPicker" DisplayMemberPath="Name" SelectedValuePath="Id"
+                      IsEnabled="False" Style="{StaticResource Picker}" AutomationProperties.Name="对话模型"/>
+        </StackPanel>
+
+        <TextBox x:Name="Transcript" Grid.Row="2" Height="112" IsReadOnly="True" IsTabStop="False"
+                 Style="{StaticResource ConversationField}" AutomationProperties.Name="对话内容"/>
+
+        <TextBox x:Name="Prompt" Grid.Row="3" Margin="0,12,0,0" MinHeight="60" MaxHeight="115"
+                 AcceptsReturn="True" MaxLength="2000" Style="{StaticResource ConversationField}"
+                 AutomationProperties.Name="输入要发送的消息"/>
+
+        <WrapPanel Grid.Row="4" Margin="0,10,0,0" VerticalAlignment="Center">
+            <CheckBox x:Name="SpeakToggle" Content="朗读对话回复" IsChecked="True" IsEnabled="False" Margin="0,0,14,0"
+                      ToolTip="使用上方的配音设置朗读对话回复"
+                      Foreground="{StaticResource TextBrush}" VerticalAlignment="Center"/>
+            <Button x:Name="RecordButton" Content="录音" IsEnabled="False" Margin="0,0,6,0" Style="{StaticResource Ghost}"/>
+            <ComboBox x:Name="LanguagePicker" SelectedIndex="0" SelectedValuePath="Tag" IsEnabled="False" VerticalAlignment="Center"
+                      Style="{StaticResource Picker}" AutomationProperties.Name="语音识别语言">
+                <ComboBoxItem Tag="zh" Content="识别中文"/>
+                <ComboBoxItem Tag="ja" Content="识别日语"/>
+            </ComboBox>
+        </WrapPanel>
+
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button x:Name="CancelButton" Content="取消" Visibility="Collapsed" Style="{StaticResource Ghost}" Margin="0,0,7,0"/>
+            <Button x:Name="SendButton" Content="发送" IsEnabled="False" Style="{StaticResource ConversationSend}"/>
+        </StackPanel>
+        <TextBlock x:Name="ActivityStatus" Grid.Row="6" Margin="0,6,0,0" Style="{StaticResource Caption}"
+                   Text="Enter 发送 · Shift+Enter 换行" TextWrapping="Wrap"/>
+    </Grid>
+</UserControl>

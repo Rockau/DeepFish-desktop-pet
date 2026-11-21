@@ -17,6 +17,10 @@ internal sealed class Settings
     public double TexScale { get; set; } = 0.5;
     // Her speech bubble, words and all, apart from her own size.
     public double BubbleScale { get; set; } = 1;
+    public bool VoiceEnabled { get; set; } = true;
+    public double VoiceVolume { get; set; } = .25;
+    public bool TtsEnabled { get; set; }
+    public string VoiceLanguage { get; set; } = "auto";
     // How long the bubble stays after her last word: 0 by how much she said (5 to 20 s), -1 until her next line or a click.
     public int BubbleSeconds { get; set; }
     // Out of the way while something else fills the screen, drawing nothing meanwhile (as the BigBlueFish pet does).
@@ -45,6 +49,7 @@ internal sealed class Settings
     // 拖到屏幕边上会弹回来，脸始终留在工作区里。默认关：能拖出屏幕，只留一小截在外面能拖回来。
     public bool KeepOnScreen { get; set; } = false;
     // Seconds between the small things she does by herself when nobody talks to her.
+    public int FocusMinutes { get; set; } = FocusTimer.DefaultMinutes;
     public int IdleSeconds { get; set; } = 300;
     // 到点叫人（本机加，2026-11-08）：按这台电脑的时钟，默认 00:30 起四层哄睡、11:30 午饭提醒（时间可调）。默认关，托盘“更多”里能开。
     public bool CoaxSleep { get; set; } = false;
@@ -65,7 +70,7 @@ internal sealed class Settings
     public double? Left { get; set; }
     public double? Top { get; set; }
 
-    // 大小和位置不记：每次启动都是右下角、1.5 倍（2026-11-19 用户定的）。改大小、拖位置只管这一次运行。
+    // 首次启动的默认大小；已有布局会在启动时检查是否仍在屏幕内。
     internal const double DefaultScale = 1.5;
 
     internal static readonly int[] FpsChoices = [30, 60, 90, 120];
@@ -76,10 +81,7 @@ internal sealed class Settings
         try
         {
             if (File.Exists(Places.SettingsFile) && JsonSerializer.Deserialize<Settings>(File.ReadAllText(Places.SettingsFile)) is { } loaded)
-            {
-                loaded.Scale = DefaultScale; loaded.Left = loaded.Top = null;
                 return loaded.Checked();
-            }
         }
         catch (Exception error)
         {
@@ -99,10 +101,13 @@ internal sealed class Settings
         Scale = Math.Clamp(double.IsFinite(Scale) ? Scale : 1, .5, 2);
         TexScale = TexScale >= 1 ? 1 : TexScale >= 0.5 ? 0.5 : 0.25;
         BubbleScale = Math.Clamp(double.IsFinite(BubbleScale) && BubbleScale > 0 ? BubbleScale : 1, .5, 2);
+        VoiceVolume = Math.Clamp(double.IsFinite(VoiceVolume) ? VoiceVolume : .25, 0, 1);
+        VoiceLanguage = VoiceLanguage is "ja" or "zh" ? VoiceLanguage : "auto";
         MusicApps = (MusicApps ?? "").Trim();
         BrowserApps = (BrowserApps ?? "").Trim();
         BubbleSeconds = StayFor(BubbleSeconds);
         IdleSeconds = Math.Clamp(IdleSeconds, 15, 600);
+        FocusMinutes = Math.Clamp(FocusMinutes, FocusTimer.MinMinutes, FocusTimer.MaxMinutes);
         DanceStrength = Dance.NormalStrength(DanceStrength);
         SleepAt = Alarms.SleepTime(SleepAt) ?? Alarms.DefaultSleepAt;
         LunchAt = Alarms.LunchTime(LunchAt) ?? Alarms.DefaultLunchAt;
@@ -113,7 +118,9 @@ internal sealed class Settings
 
     internal static int StayFor(int seconds) => seconds is -1 or 0 ? seconds : Math.Clamp(seconds, 5, 180);
 
-    internal void Save()
+    internal void Save() => TrySave();
+
+    internal bool TrySave()
     {
         try
         {
@@ -121,7 +128,8 @@ internal sealed class Settings
             var temp = Places.SettingsFile + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(this, Format));
             File.Move(temp, Places.SettingsFile, overwrite: true);
+            return true;
         }
-        catch (Exception error) { Places.Log("设置存不下来：" + error.Message); }
+        catch (Exception error) { Places.Log("设置存不下来：" + error.Message); return false; }
     }
 }

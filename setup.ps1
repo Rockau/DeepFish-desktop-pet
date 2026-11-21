@@ -69,11 +69,28 @@ Run '渲染器编译' { & $cmake --build (Join-Path $renderer 'build') --config 
 Ok '渲染器编译好了'
 
 # .NET 10 SDK
-$dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
-if (!$dotnet -or !(& dotnet --list-sdks | Where-Object { $_ -match '^(1[0-9])\.' })) { Missing '没装 .NET 10 SDK。可以运行：winget install Microsoft.DotNet.SDK.10' }
+$dotnet = Get-Command dotnet.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (!$dotnet -or !(& $dotnet.Source --list-sdks | Where-Object { $_ -match '^(1[0-9])\.' })) { Missing '没装 .NET 10 SDK。可以运行：winget install Microsoft.DotNet.SDK.10' }
+# 用便携 .NET 编译时，把运行库位置记在启动器里，Explorer 双击时也能找到同一套 .NET。
+function Publish-DotNet($project, $output) {
+    $publishArgs = @('publish', $project, '-c', 'Release', '-o', $output, '--nologo', '-v', 'q')
+    $dotnetFolder = Split-Path -Parent $dotnet.Source
+    if ($dotnetFolder -ne (Join-Path $env:ProgramFiles 'dotnet') -and
+        (Test-Path -LiteralPath (Join-Path $dotnetFolder 'shared\Microsoft.WindowsDesktop.App'))) {
+        $app = [Uri]::new($output.TrimEnd('\') + '\')
+        $runtime = [Uri]::new($dotnetFolder.TrimEnd('\') + '\')
+        $relative = $app.MakeRelativeUri($runtime)
+        if (!$relative.IsAbsoluteUri) {
+            $path = [Uri]::UnescapeDataString($relative.OriginalString).Replace('/', '\')
+            $publishArgs += "-p:AppHostRelativeDotNet=$path"
+        }
+    }
+    & $dotnet.Source @publishArgs
+}
+
 Free (Join-Path $root 'bin')
 foreach ($project in 'FishPet', 'FishPet.Mcp') {
-    Run "$project 编译" { & dotnet publish (Join-Path $root "src\$project\$project.csproj") -c Release -o (Join-Path $root 'bin') --nologo -v q }
+    Run "$project 编译" { Publish-DotNet (Join-Path $root "src\$project\$project.csproj") (Join-Path $root 'bin') }
 }
 Ok '桌宠和 MCP 接口编译好了'
 
@@ -82,7 +99,7 @@ $tray = Join-Path $root 'tray\FishTray\FishTray.csproj'
 if (Test-Path -LiteralPath $tray) {
     Get-Process FishTray -ErrorAction SilentlyContinue | Where-Object { $_.Path -like (Join-Path $root 'tray\*') } | Stop-Process -Force -ErrorAction SilentlyContinue
     Free (Join-Path $root 'tray\app')
-    Run '托盘控制台编译' { & dotnet publish $tray -c Release -o (Join-Path $root 'tray\app') --nologo -v q }
+    Run '托盘控制台编译' { Publish-DotNet $tray (Join-Path $root 'tray\app') }
     Ok '托盘控制台编译好了'
     # 托盘图标要从普通完整性（Medium）的进程发出去，Explorer 才收；Low 标签会让图标静默消失（本机加，2026-11-11）
     # 普通文件夹本来就是 Medium，改不改都一样；可普通用户多半没有改标签的权限，会报“拒绝访问”。以前这一下会让脚本停住，

@@ -11,7 +11,7 @@ namespace FishTray;
 //   Idle       待机小动作 / 被碰时的反应（桌宠 Behavior.Moods 里的名字）
 //   RawMotion  模型自带的动作文件（Animation\*.motion3.json）
 //   Skit       小剧场（skits.txt 里的名字）；SkitRandom 随机来一个；Demo 演全部待机小动作
-internal enum Kind { Cue, Hold, Pose, Face, RawExp, Idle, RawMotion, Skit, SkitRandom, Demo }
+internal enum Kind { Cue, Hold, Pose, Face, RawExp, Idle, RawMotion, Skit, SkitRandom, Demo, Library }
 
 internal sealed record Item(string Label, Kind Kind, string Arg = "", string Tip = "", string State = "")
 {
@@ -85,7 +85,7 @@ internal static class Catalog
         ]);
 
         var theatre = new Section("skit", "小剧场",
-            "skits.txt 里写好的整段表演（台词、动作、临时道具），她没人理时也会自己演。",
+            "点一下播放整段台词和动作。",
         [
             new("点一个演出来", skits.Select(name => new Item(name, Kind.Skit, name, "演小剧场：" + name)).ToArray()),
         ]);

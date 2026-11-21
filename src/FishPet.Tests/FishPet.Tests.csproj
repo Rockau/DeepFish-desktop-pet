@@ -8,6 +8,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../FishPet/Behavior.cs" Link="Behavior.cs" />
+    <Compile Include="../FishPet/AffectionTouchReactions.cs" Link="AffectionTouchReactions.cs" />
+    <Compile Include="../FishPet/ImportedActions.cs" Link="ImportedActions.cs" />
+    <Compile Include="../FishPet/ActionTuning.cs" Link="ActionTuning.cs" />
+    <Compile Include="../FishPet/HeadStrokeFace.cs" Link="HeadStrokeFace.cs" />
     <Compile Include="../FishPet/Body.cs" Link="Body.cs" />
     <Compile Include="../FishPet/Dance.cs" Link="Dance.cs" />
     <Compile Include="../FishPet/Tempo.cs" Link="Tempo.cs" />
@@ -22,5 +26,7 @@
     <Compile Include="../FishPet/MemoryView.cs" Link="MemoryView.cs" />
     <Compile Include="../FishPet/Alarms.cs" Link="Alarms.cs" />
     <Compile Include="../FishPet/Welcome.cs" Link="Welcome.cs" />
+    <Compile Include="../FishPet/PerformanceLibrary.cs" Link="PerformanceLibrary.cs" />
+    <Compile Include="../FishPet/SkitScript.cs" Link="SkitScript.cs" />
   </ItemGroup>
 </Project>

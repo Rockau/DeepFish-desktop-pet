@@ -11,7 +11,8 @@ namespace FishPet;
 // keys that start and end at 0; EyeOpen closes her eyes as far as it goes below 0. Pushed marks a movement that
 // turns with a side: away from where she was touched, or either way at random when she moves by herself.
 internal sealed record Mood(string[] Expressions, (string Id, double Value)[] Parameters, double Seconds = 3,
-    (string Id, string Keys)[]? Motion = null, (string On, string Off)? Gesture = null, bool Pushed = false);
+    (string Id, string Keys)[]? Motion = null, (string On, string Off)? Gesture = null, bool Pushed = false,
+    double ExpressionStrength = 1, double? BlushStrength = null, bool HoldMouth = false);
 
 // Her reflexes on the Live2D display: what she does by herself when clicked, dragged, left alone or busy.
 // Built only for this display, nothing here reads the clip rules. It gives the renderer commands and
@@ -21,8 +22,12 @@ internal sealed class Behavior
     private const string Glasses = "黑框眼镜", Monocle = "单片眼镜";
     private static readonly TimeSpan ClickSpan = TimeSpan.FromSeconds(2.5);
     private const int ClicksForBasin = 5;
+    private static readonly TimeSpan ChestPokeWindow = TimeSpan.FromSeconds(4);
+    internal const int ChestPokesForHeartEyes = 3;
+    internal const string HeartEyesChestPoke = "娇羞";
+    internal const string DisgustedBodyClick = "点身体·黑脸";
 
-    internal static readonly IReadOnlyDictionary<string, Mood> Moods = new Dictionary<string, Mood>
+    private static readonly Dictionary<string, Mood> BuiltInMoods = new()
     {
         ["问候"] = new([], [("EyeSmile", 1), ("ParamMouthForm", 1)], 4.4, [("FaceAngleZ", "0:0 .5:7 1:5 1.5:0 3.4:0 3.8:7 4.4:0"), ("LeanInput", "0:0 1.1:0 1.7:-11 2.6:-11 3.3:0"), ("FaceAngleY", "0:0 1.1:0 1.7:-19 2.2:-17 2.6:-19 3.3:0"), ("ViewSquash", "0:0 1.1:0 1.7:.04 2.6:.04 3.3:0"), ("EyeOpen", "0:0 1.2:0 1.6:-1 2.7:-1 3.1:0 4.4:0")]), // 抚胸交给 Body（PetWindow 出场时 Apply("抚胸")）：手留到后面的话说完，不在 4.4 秒时自己放下（本机改，2026-11-06）
         ["告别"] = new([], [("EyeSmile", 1), ("ParamMouthForm", 1)], 3, [("FaceAngleZ", "0:0 .4:6 .8:0"), ("LeanInput", "0:0 .7:0 1.3:-12 2.6:-12 3:0"), ("FaceAngleY", "0:0 .7:0 1.3:-19 2.6:-19 3:0"), ("ViewSquash", "0:0 .7:0 1.3:.04 2.6:.04 3:0"), ("EyeOpen", "0:0 .8:0 1.2:-1 2.6:-1 3:0")], ("默认手切举手", "举手切默认手")),
@@ -33,16 +38,21 @@ internal sealed class Behavior
         ["委屈"] = new(["流泪"], [("BrowInnerUp", 1), ("Mouthpucker", 1), ("FaceAngleY", -10), ("FaceAngleZ", -6)], 3, [("ViewSquash", "0:0 .4:.03 2.4:.025 3:0"), ("FaceAngleX", "0:0 .4:-3 .9:2 1.4:-3 1.9:2 3:0")]),
         ["开心"] = new([], [("EyeSmile", 1), ("EyeOpen", 0), ("ParamMouthForm", 1), ("ParamMouthOpenY", .5), ("FaceAngleY", 6)], 3, [("FaceAngleZ", "0:0 .3:-10 .7:10 1.1:-8 1.5:6 2:0"), ("FaceAngleY", "0:0 .3:6 .7:2 1.1:6 1.5:2 2:0")], ("默认手切举手", "举手切默认手")),
         ["心虚"] = new(["流冷汗"], [("ParamEyeBallX", .8), ("ParamEyeBallY", .3), ("MouthX", .6), ("ParamMouthForm", -.5), ("FaceAngleX", 14), ("FaceAngleY", -8)], 3, [("FaceAngleZ", "0:0 .3:-4 .6:2 .9:-3 1.2:2 1.5:-2 2:0"), ("ViewSquash", "0:0 .3:.03 2:.02 2.6:0"), ("LeanInput", "0:0 .3:6 2:5 2.6:0")], Pushed: true),
+        [DisgustedBodyClick] = new(["黑脸"],
+            [("EyeOpen", .45), ("LEyeSquint", .3), ("REyeSquint", .38), ("ParamMouthForm", -.92), ("MouthX", -.17),
+             ("ParamBrowLAngle", -.68), ("ParamBrowRAngle", -.62), ("ParamEyeBallX", -.42), ("ParamEyeBallY", -.22)],
+            2.8, [("LeanInput", "0:0 .24:8 .8:6 1.9:4 2.8:0"), ("FaceAngleX", "0:0 .28:-8 1.6:-6 2.8:0"),
+                  ("FaceAngleY", "0:0 .36:-7 1.8:-5 2.8:0")], Pushed: true, HoldMouth: true),
         ["震惊"] = new(["圈圈眼"], [("ParamMouthOpenY", .8), ("JawOpen", .5), ("FaceAngleX", -16), ("FaceAngleY", -8), ("ParamEyeBallX", -.6), ("ParamEyeBallY", -.5)], 3, [("ViewSquash", "0:0 .06:.06 .18:-.05 .4:.05 .6:0"), ("ViewY", "0:0 .06:0 .2:.06 .4:0"), ("FaceAngleY", "0:0 .2:16 .5:4 1.4:0")], Pushed: true),
         ["思考"] = new([], [("ParamEyeBallY", .7), ("ParamEyeBallX", .4), ("FaceAngleZ", 12), ("FaceAngleY", 6), ("BrowInnerUp", .6)], 3.4, [("FaceAngleX", "0:0 .6:4 1.4:2 2.2:5 3:0")], ("竖手指切出来动画", "竖手指切回默认")),
         ["摸头"] = new(["脸红"], [("EyeSmile", .9), ("ParamMouthForm", 1)], 3, [("FaceAngleY", "0:0 .25:-18 .7:-12 1.1:-19 1.5:-12 1.9:-16 2.4:0"), ("FaceAngleZ", "0:0 .5:14 1.1:-14 1.7:14 2.4:0"), ("ViewRoll", "0:0 .5:2 1.1:-2 1.7:2 2.4:0"), ("ViewSquash", "0:0 .25:.05 1.9:.04 2.4:0")]),
-        ["戳脸"] = new(["＞＜"], [("CheeckPuff", .8), ("FaceAngleX", 14), ("FaceAngleZ", 8)], 3, [("FaceAngleX", "0:0 .08:12 .3:6 1.2:0"), ("FaceAngleY", "0:0 .08:-6 .4:-2 1.2:0"), ("ViewSquash", "0:0 .06:.04 .25:0 1.2:0")], Pushed: true),
+        ["戳脸"] = new(["＞＜"], [("CheeckPuff", .8), ("FaceAngleX", -14), ("FaceAngleZ", -8)], 3, [("FaceAngleX", "0:0 .08:-12 .3:-6 1.2:0"), ("FaceAngleY", "0:0 .08:-6 .4:-2 1.2:0"), ("ViewSquash", "0:0 .06:.04 .25:0 1.2:0")], Pushed: true),
         ["挨打"] = new(["钢盆", "流冷汗"], [("ParamMouthForm", -.6), ("FaceAngleY", -12)], 4, [("ViewSquash", "0:0 .09:.11 .3:.02 .5:.05 .75:.01 1.4:0"), ("FaceAngleZ", "0:0 .15:10 .4:-8 .65:6 .9:-4 1.2:2 1.6:0"), ("FaceAngleY", "0:0 .1:-12 .5:-4 1.6:0")]),
         ["护裙"] = new(["黑脸", "脸红"], [("CheeckPuff", .8), ("ParamBrowLY", -.6), ("ParamBrowRY", -.6), ("FaceAngleX", -16), ("FaceAngleY", -8), ("ParamEyeBallX", .5)], 3, [("FaceAngleZ", "0:0 .2:-12 .5:-7 1.6:-8 2.8:0"), ("ViewSquash", "0:0 .12:.05 .35:.01 2.8:0"), ("LeanInput", "0:0 .3:5 2.2:4 2.8:0")], ("默认手切举手", "举手切默认手")),
-        // 亲密度满档（第 5 级）时戳裙子：不凶了，脸红、眼冒爱心，低着头扭扭捏捏地左右晃，手按在胸口（本机加，2026-11-08）
-        ["娇羞"] = new(["脸红", "爱心眼"], [("EyeSmile", .7), ("MouthPressLipOpen", .5), ("ParamMouthForm", .6), ("FaceAngleY", -10), ("ParamEyeBallX", -.5), ("ParamEyeBallY", -.4), ("BrowInnerUp", .7)], 4.2,
+        // 羁绊档连戳胸部后才出现爱心眼。
+        [HeartEyesChestPoke] = new(["脸红", "爱心眼"], [("EyeSmile", .7), ("MouthPressLipOpen", .5), ("ParamMouthForm", .6), ("FaceAngleY", -10), ("ParamEyeBallX", -.5), ("ParamEyeBallY", -.4), ("BrowInnerUp", .7)], 4.2,
             [("FaceAngleZ", "0:0 .4:-9 .9:6 1.4:-8 1.9:5 2.4:-7 2.9:4 3.5:-3 4.2:0"), ("FaceAngleX", "0:0 .4:-6 .9:4 1.4:-6 1.9:4 2.4:-5 2.9:3 4.2:0"), ("LeanInput", "0:0 .3:-4 .9:3 1.4:-4 1.9:3 2.4:-3 3:2 4.2:0"), ("ViewSquash", "0:0 .3:.03 3.6:.025 4.2:0")]),
-        // 满档戳裙子的另外两种（和“娇羞”三选一，概率平分）：红着脸往前凑；大大地往前倾、手按在胸口、笑眼（和 Body 的「笑眼」同一组参数）（用户定的，2026-11-08）
+        // 第一、二次戳胸时先用这两个害羞动作。
         ["娇羞前倾"] = new(["脸红"], [("EyeSmile", .6), ("MouthPressLipOpen", .4), ("ParamMouthForm", .6), ("BrowInnerUp", .5), ("FaceAngleZ", 7)], 4,
             [("LeanInput", "0:0 .45:-14 3.4:-13 4:0"), ("FaceAngleY", "0:0 .45:-7 3.4:-6 4:0"), ("FaceAngleZ", "0:0 .8:3 1.6:-2 2.4:3 3.2:-1 4:0"), ("ViewSquash", "0:0 .45:.02 3.4:.02 4:0")]),
         ["娇羞抚胸"] = new(["脸红"], [("EyeOpen", .45), ("EyeSmile", 1), ("ParamMouthForm", .8), ("BrowInnerUp", .6), ("FaceAngleZ", -6)], 4.2,
@@ -54,8 +64,38 @@ internal sealed class Behavior
         ["歪头"] = new([], [("FaceAngleZ", 18), ("FaceAngleX", 5), ("BrowInnerUp", .6), ("ParamBrowLY", .4), ("ParamBrowRY", .4), ("ParamEyeBallY", .2)], 3.2, [("FaceAngleZ", "0:0 .25:4 .5:0"), ("EyeOpen", "0:0 1.1:0 1.2:-1 1.32:0 1.48:-1 1.6:0 3.2:0")], Pushed: true),
         ["发呆"] = new([], [], 4.6, [("EyeOpen", "0:0 .9:-.45 3.1:-.5 3.25:-1 3.4:0 4.6:0"), ("ParamEyeBallY", "0:0 .9:.45 3.1:.45 3.4:0"), ("ParamMouthOpenY", "0:0 1:.3 3.1:.3 3.3:0"), ("JawOpen", "0:0 1:.18 3.1:.18 3.3:0"), ("FaceAngleY", "0:0 1:-3 3.1:-4 3.35:3 3.8:0"), ("FaceAngleX", "0:0 3.2:0 3.35:-7 3.55:6 3.75:-3 4:0"), ("ViewSquash", "0:0 1:.015 3.1:.015 3.35:0")]),
         ["叹气"] = new([], [], 3.6, [("LeanInput", "0:0 .8:5 1.8:-7 2.8:-6 3.5:0"), ("FaceAngleY", "0:0 .8:7 1.8:-9 2.8:-8 3.5:0"), ("ViewSquash", "0:0 .8:-.02 1.2:-.02 1.9:.03 2.8:.025 3.5:0"), ("EyeOpen", "0:0 .8:-.2 1.8:-.6 2.8:-.55 3.5:0"), ("ParamMouthOpenY", "0:0 1.1:0 1.4:.3 2.2:.12 2.6:0"), ("MouthFunnel", "0:0 1.1:0 1.4:.9 2.2:.6 2.6:0"), ("BrowInnerUp", "0:0 1:.6 2.8:.6 3.5:0")]),
-        // 鼠标在她身上停了约 2 秒时的小反应（本机加，2026-11-10）：幅度都很轻，对应 hover.txt 的台词。
-        // 摸头结束（右键松开）后按摸了多久分三档：脸都会红一下；越摸得久越舍不得、越腻歪（本机加，2026-11-10，对应 stroke.txt 的「抚摸头1/2/3」）。
+        // 右键摸头松手，脸红接续抚摸时的强度。低好感被摸烦时向后避，高好感嫌摸不够时往前凑。
+        ["摸后嫌弃"] = new(["脸红"],
+            [("EyeOpen", .47), ("LEyeSquint", .28), ("REyeSquint", .4), ("ParamMouthForm", -.83), ("MouthX", .52),
+             ("ParamBrowLY", -.22), ("ParamBrowRY", -.24), ("ParamEyeBallX", .45)],
+            2.9, [("FaceAngleX", "0:0 .31:8 2:7 2.9:0"),
+                 ("FaceAngleZ", "0:0 .33:4 2:3 2.9:0"), ("ParamEyeLOpen", "0:0 2.9:0")]),
+        ["摸后别扭"] = new(["脸红"],
+            [("EyeOpen", .74), ("ParamEyeBallX", .55), ("BrowInnerUp", .28),
+             ("ParamMouthForm", -.45), ("MouthX", .36), ("Mouthpucker", .25)],
+            2.8, [("FaceAngleX", "0:0 .42:-10 1.9:-6 2.8:0")]),
+        ["摸后放松"] = new(["脸红"],
+            [("EyeOpen", .55), ("EyeSmile", .36), ("ParamMouthForm", .28)],
+            3, [("FaceAngleY", "0:0 .55:3 1.15:-2 1.8:0 3:0")]),
+        ["摸太久生气"] = new(["脸红", "黑脸"],
+            [("EyeOpen", .56), ("LEyeSquint", .44), ("REyeSquint", .5), ("ParamBrowLY", -.83), ("ParamBrowRY", -.83),
+             ("ParamBrowLAngle", -1), ("ParamBrowRAngle", -1), ("post:ParamBrowLAngleSmoothing", -.65),
+             ("post:ParamBrowRAngleSmoothing", -.65), ("ParamMouthForm", -1), ("MouthX", .45), ("CheeckPuff", .43),
+             ("ParamEyeBallX", .4)],
+            3.1, [("LeanInput", "0:0 .35:10 2:8 3.1:0"), ("FaceAngleY", "0:0 .23:-12 .6:-16 2:-13 3.1:0"),
+                  ("FaceAngleX", "0:0 .24:-10 .55:7 1.0:12 2:10 3.1:0"), ("ParamEyeLOpen", "0:0 3.1:0")],
+            ExpressionStrength: .34, BlushStrength: 1),
+        ["没摸够不满"] = new(["脸红"],
+            [("EyeOpen", 1.08), ("ParamMouthForm", -.62), ("MouthX", .58), ("Mouthpucker", .4),
+             ("BrowInnerUp", .35), ("CheeckPuff", .28)],
+            3.1, [("FaceAngleZ", "0:0 .42:-6 2.1:-4 3.1:0"), ("LeanInput", "0:0 .47:-6 2.1:-5 3.1:0")]),
+        ["没摸够生气"] = new(["脸红"],
+            [("EyeOpen", 1.05), ("ParamMouthForm", -.9), ("MouthX", .75), ("Mouthpucker", 1), ("CheeckPuff", .9),
+             ("ParamBrowLY", -.48), ("ParamBrowRY", -.48), ("ParamBrowLAngle", -.65), ("ParamBrowRAngle", -.65),
+             ("CheeckPuffR", .55), ("MouthSmile_L", .45), ("MouthPuckerWiden", .6)],
+            3.3, [("LeanInput", "0:0 .36:-11 2.3:-8 3.3:0"), ("FaceAngleZ", "0:0 .23:6 .52:-5 .96:3 1.6:0 3.3:0"),
+                  ("FaceAngleY", "0:0 .3:-6 .8:-4 2.4:-4 3.3:0"), ("ParamEyeLOpen", "0:0 3.3:0")]),
+        // 熟悉后松手的失落、不舍和腻歪，对应 stroke.txt 的「抚摸头1/2/3」。
         ["摸后失落"] = new(["脸红"], [("BrowInnerUp", .7), ("MouthPressLipOpen", .3), ("ParamMouthForm", -.1), ("ParamEyeBallY", -.4), ("FaceAngleY", -5), ("FaceAngleZ", 4)], 3.4,
             [("FaceAngleZ", "0:0 .5:3 1.3:-2 2.1:3 3.4:0"), ("ViewSquash", "0:0 .3:.01 2.8:.01 3.4:0")]),
         ["摸后不舍"] = new(["脸红"], [("EyeSmile", .45), ("BrowInnerUp", .9), ("MouthPressLipOpen", .5), ("ParamMouthForm", .2), ("ParamEyeBallY", -.45), ("FaceAngleY", -8), ("FaceAngleZ", 7)], 4,
@@ -64,9 +104,10 @@ internal sealed class Behavior
             [("LeanInput", "0:0 .5:-15 3.9:-14 4.8:0"), ("FaceAngleZ", "0:0 .8:3 1.6:-3 2.4:3 3.2:-3 4:2 4.8:0"), ("FaceAngleX", "0:0 .8:-4 1.8:4 2.8:-4 3.8:3 4.8:0"), ("ViewSquash", "0:0 .5:.03 4.1:.03 4.8:0")], ("默认手切举手", "举手切默认手")),
         // 摸头彩蛋（本机加，2026-11-11）：有效抚摸满 20 秒、融化后松手。脸红 + 手抬到胸口 + 快眨两下，6 秒。
         // 前倾：松手时按住 -17，表情里用动画加 0→+1 慢慢回到 -16，结束再交回给 clear 淡出，不会和旧值叠起来弹一下。
-        ["摸后融化"] = new(["脸红"], [("EyeSmile", .55), ("ParamMouthForm", .9), ("MouthPressLipOpen", .35), ("BrowInnerUp", .5), ("FaceAngleY", -4), ("FaceAngleZ", 4), ("LeanInput", -17)], 6,
+        [HeadStrokeFace.MeltReleaseMood] = new(["脸红"], [("EyeSmile", .55), ("ParamMouthForm", .9), ("MouthPressLipOpen", .35), ("BrowInnerUp", .5), ("FaceAngleY", -4), ("FaceAngleZ", 4), ("LeanInput", -17)], 6,
             [("LeanInput", "0:0 .8:1 4.8:1 6:0"), ("FaceAngleZ", "0:0 .8:5 2:-2 3.6:3 6:0"), ("FaceAngleX", "0:0 .7:-3 2.2:2 3.8:-2 6:0"),
              ("EyeOpen", "0:0 .2:-1 .28:-.2 .45:0 .95:-1 1.03:-.2 1.2:0 6:0"), ("ViewSquash", "0:0 .6:.02 5.2:.02 6:0")], ("默认手切举手", "举手切默认手")),
+        // 鼠标在她身上停了一会儿后的反应（本机加，2026-11-10）：幅度都很轻，对应 hover.txt 的台词。
         ["悬停头"] = new([], [("FaceAngleZ", 11), ("FaceAngleX", -3), ("ParamEyeBallY", .3), ("BrowInnerUp", .4), ("EyeSmile", .35)], 2.8, [("FaceAngleZ", "0:0 .3:3 .8:-2 1.4:2 2.8:0")], Pushed: true),
         ["悬停脸"] = new(["脸红"], [("ParamMouthForm", .5), ("ParamEyeBallX", .4), ("ParamEyeBallY", -.2), ("FaceAngleY", -4)], 2.6, [("EyeOpen", "0:0 .15:-1 .3:0 1.1:0 1.25:-1 1.4:0 2.6:0"), ("ViewSquash", "0:0 .3:.012 2.2:.01 2.6:0")], Pushed: true),
         ["悬停手"] = new([], [("EyeSmile", .8), ("ParamMouthForm", 1), ("FaceAngleY", 4), ("FaceAngleZ", -4)], 2.8, [("FaceAngleZ", "0:0 .4:-5 1:-2 1.6:-5 2.8:0")], ("默认手切举手", "举手切默认手")),
@@ -75,6 +116,85 @@ internal sealed class Behavior
         ["悬停身"] = new([], [("FaceAngleZ", 9), ("ParamEyeBallY", .3), ("BrowInnerUp", .3)], 2.6, [("FaceAngleX", "0:0 .5:3 1.1:-2 1.8:2 2.6:0")], Pushed: true),
         ["玩狗尾草"] = new([], [("ParamEyeBallX", -.7), ("ParamEyeBallY", -.3), ("EyeOpen", .75), ("EyeSmile", 1), ("ParamMouthForm", 1)], 5.4, [("FaceAngleX", "0:0 .5:0 1.2:-10 4.7:-10 5.4:0"), ("FaceAngleZ", "0:0 .5:0 1.2:8 1.9:3 2.6:9 3.3:3 4:9 4.7:6 5.4:0"), ("FaceAngleY", "0:0 .5:0 1.2:-5 4.7:-5 5.4:0")], ("狗尾草切换出来", "狗尾草切回默认手")),
     };
+    private const string FacePokePrefix = "戳脸·";
+    private const string BlushingFacePoke = FacePokePrefix + "连戳脸红";
+    private static readonly TimeSpan FacePokeBlushWindow = TimeSpan.FromSeconds(4);
+    private const int FacePokesForBlush = 3;
+    private static readonly (string Yaw, string Roll) SlightSurpriseTurn =
+        ("0:0 .10:-13 .27:-11 .46:-8 .88:0", "0:0 .11:-5 .29:-4 .50:-3 .94:0");
+    private static readonly (string Yaw, string Roll) SqueezedEyesTurn =
+        ("0:0 .11:-20 .37:-19 .57:-15 .80:-8 1.10:0", "0:0 .12:-8 .38:-7 .60:-5 .84:-3 1.14:0");
+    private static readonly (string Yaw, string Roll) SmilingTurn =
+        ("0:0 .17:-21 .40:-20 .62:-17 .86:-8 1.20:0", "0:0 .18:-8 .42:-8 .64:-5 .88:-3 1.24:0");
+    private static readonly (string Name, Mood Pose)[][] FacePokes =
+    [
+        [
+            (FacePokePrefix + "半睁眼嫌弃", FacePoke([],
+                [("EyeOpen", .48), ("LEyeSquint", .24), ("REyeSquint", .43),
+                 ("ParamBrowLY", -.18), ("ParamBrowRY", -.24),
+                 ("ParamMouthForm", -.74), ("MouthX", .33)])),
+            (FacePokePrefix + "皱眉瞪眼", FacePoke(["黑脸"],
+                [("EyeOpen", .9), ("LEyeSquint", .5), ("REyeSquint", .5),
+                 ("ParamBrowLY", -.88), ("ParamBrowRY", -.88), ("ParamBrowLAngle", -1), ("ParamBrowRAngle", -1),
+                 ("post:ParamBrowLAngleSmoothing", -.85), ("post:ParamBrowRAngleSmoothing", -.85),
+                 ("ParamMouthForm", -1), ("FaceAngleY", -5)]))
+        ],
+        [(FacePokePrefix + "侧目", FacePoke([],
+            [("EyeOpen", .78), ("LEyeSquint", .16), ("REyeSquint", .2), ("ParamEyeBallX", -.58),
+             ("ParamBrowLY", -.22), ("ParamMouthForm", -.39), ("MouthX", -.25)]))],
+        [(FacePokePrefix + "轻微惊讶", FacePoke([],
+            [("EyeOpen", 1.08), ("BrowInnerUp", .38), ("ParamBrowLY", .24), ("ParamBrowRY", .24),
+             ("ParamMouthForm", -.05), ("ParamMouthOpenY", .28), ("JawOpen", .16), ("MouthFunnel", .65)],
+            SlightSurpriseTurn))],
+        [
+            (FacePokePrefix + "挤眼惊呼", FacePoke(["＞＜"],
+                [("ParamMouthForm", -.25), ("ParamMouthOpenY", .94), ("JawOpen", .53),
+                 ("MouthFunnel", .4), ("MouthPuckerWiden", .3)], SqueezedEyesTurn)),
+            (FacePokePrefix + "挤眼噘嘴", FacePoke(["＞＜"],
+                [("ParamMouthForm", -.85), ("Mouthpucker", .4), ("MouthX", .63), ("CheeckPuff", .46),
+                 ("MouthSmile_L", .3)], SqueezedEyesTurn))
+        ],
+        [(FacePokePrefix + "眯眼浅笑", FacePoke([],
+            [("EyeOpen", .17), ("EyeSmile", 1), ("ParamMouthForm", .72), ("ParamMouthOpenY", .07)], SmilingTurn))],
+        [("戳脸", BuiltInMoods["戳脸"])]
+    ];
+
+    private static Mood FacePoke(string[] expressions, (string Id, double Value)[] parameters,
+        (string Yaw, string Roll)? turn = null)
+    {
+        const double seconds = 1.65;
+        var (yaw, roll) = turn ?? ("0:0 .08:-8 .28:-3 .62:0", "0:0 .08:-4 .32:-2 .7:0");
+        // 眼部曲线暂停自动眨眼，让设定的眼形在这次表情中清楚可见。
+        return new(expressions, parameters, seconds,
+            [("FaceAngleX", yaw), ("FaceAngleZ", roll),
+             ("ViewSquash", "0:0 .07:.018 .27:0"),
+             ("ParamEyeLOpen", FormattableString.Invariant($"0:0 {seconds}:0"))], Pushed: true);
+    }
+
+    internal static IEnumerable<string> FacePokeActions(int level) => FacePokes[level].Select(face => face.Name);
+    internal static bool IsFacePokeVariant(string? name) => name?.StartsWith(FacePokePrefix, StringComparison.Ordinal) == true;
+    internal static string FacePokeLabel(string name) => IsFacePokeVariant(name)
+        ? name[FacePokePrefix.Length..] : "原有戳脸，连戳会脸红";
+    internal static bool HoldsFacePokeMouth(string? name) => IsFacePokeVariant(name) && name != BlushingFacePoke;
+
+    internal static readonly IReadOnlyDictionary<string, Mood> Moods = BuildMoods();
+
+    private static IReadOnlyDictionary<string, Mood> BuildMoods()
+    {
+        var actions = new Dictionary<string, Mood>(BuiltInMoods);
+        foreach (var faces in FacePokes)
+            foreach (var (name, pose) in faces) actions.TryAdd(name, pose);
+        actions.Add("护裙·嫌弃", BuiltInMoods["护裙"] with { Expressions = ["黑脸"] });
+        actions.Add(HeadStrokeFace.NegativeReleaseMood, BuiltInMoods["摸太久生气"] with
+        {
+            Expressions = ["黑脸"], ExpressionStrength = 1, BlushStrength = 0, HoldMouth = true
+        });
+        var originalFacePoke = BuiltInMoods["戳脸"];
+        actions.Add(BlushingFacePoke, originalFacePoke with { Expressions = [.. originalFacePoke.Expressions, "脸红"] });
+        foreach (var (name, action) in AffectionTouchReactions.Moods) actions.Add(name, action);
+        foreach (var (name, action) in ImportedActions.Moods) actions.TryAdd(name, action);
+        return actions;
+    }
     // What she does by herself when left alone. A hand only comes up as part of one of these: a gesture on
     // its own for no reason looked odd (the owner, 2026-11-02). Late at night she gets sleepy.
     private static readonly string[] IdleMoods = ["张望", "哼歌", "害羞", "得意", "思考", "打哈欠", "打瞌睡", "歪头", "发呆", "叹气", "玩狗尾草"];
@@ -88,6 +208,9 @@ internal sealed class Behavior
     private readonly Random random;
     private readonly HashSet<string> activities = [];
     private readonly List<DateTime> clicks = [];
+    private readonly int[] nextFacePoke = new int[FacePokes.Length];
+    private readonly Queue<DateTime> recentTopFacePokes = new();
+    private readonly Queue<DateTime> recentChestPokes = new();
     private Mood? mood;
     private DateTime moodUntil, nextIdle;
     private string? lastIdle;
@@ -95,16 +218,24 @@ internal sealed class Behavior
     private DateTime motionUntil;
     private (string On, string Off)? moodGesture;
     internal string? Showing { get; private set; }
+    internal bool HoldsMouth => mood?.HoldMouth == true;
     // Her own body language (Body) under the reflexes: a hand she has up stays, and what a
     // reflex held and let go of is hers again once it ends.
     // 用户正按着右键抚摸、或她头晕着：待机的抽签和小动作都别插进来（本机加，2026-11-10）。
     internal bool Touching { get; set; }
+    internal Func<string, Mood, Mood>? Tune { get; set; }
+    internal Mood Action(string name) => Tune?.Invoke(name, Moods[name]) ?? Moods[name];
     // 把正演着的小反应收掉（抚摸开始、头晕开始时用）。
-    internal void Interrupt() => EndMood();
-    internal static string HoverMood(string zone) => zone switch
+    internal int MotionRevision { get; private set; }
+    internal void Interrupt() { MotionRevision++; ResetChestPokes(); EndMood(); }
+    internal static string HoverMood(string zone, int level)
     {
-        "head" => "悬停头", "face" => "悬停脸", "hand" => "悬停手", "skirt" => "悬停裙", "tail" => "悬停尾", _ => "悬停身",
-    };
+        var hover = AffectionTouchReactions.ForZone(zone, level)?.Hover;
+        if (hover != null) return hover;
+        if (zone == "face")
+            return AffectionTouchReactions.ForZone("head", level)!.Value.Hover!;
+        return zone == "skirt" ? "悬停裙" : "悬停身";
+    }
     // 头部范围（占窗口的比例）：中心 (X, Y)、半宽 Rx、半高 Ry。右键摸头时那只手按它来倾斜，鼠标在这个椭圆里就算摸头。
     internal static (double X, double Y, double Rx, double Ry) HeadBox(string shape) => shape switch
     {
@@ -133,6 +264,8 @@ internal sealed class Behavior
     // A new renderer knows nothing of what the one before showed.
     internal void Resume(DateTime now, int intervalSeconds)
     {
+        MotionRevision++;
+        ResetChestPokes();
         mood = null; Showing = null; moodGesture = null; dragging = false; wearingGlasses = false; motionUntil = default;
         nextIdle = now.AddSeconds(intervalSeconds);
         UpdateGlasses();
@@ -140,11 +273,18 @@ internal sealed class Behavior
 
     // side: which way she was pushed, 1 to the viewer's right. Clicked again in the middle of a movement the
     // face changes at once, but a second movement on top of the first would throw her about.
-    internal void Show(string name, DateTime now, int side = 1, bool force = false)
+    internal void Show(string name, DateTime now, int side = 1, bool force = false, Mood? preview = null, bool plainFace = false)
     {
+        MotionRevision++;
         EndMood();
-        var next = Moods[name];
-        foreach (var expression in next.Expressions) send($"exp {expression} 1");
+        var next = preview ?? Action(name);
+        if (plainFace) next = PlainClickFace(name, next);
+        foreach (var expression in next.Expressions)
+        {
+            double strength = expression == "脸红" ? next.BlushStrength ?? next.ExpressionStrength : next.ExpressionStrength;
+            double amount = ActionStyle.ExpressionAmount(expression, strength);
+            send(amount == 1 ? $"exp {expression} 1" : FormattableString.Invariant($"expamount {expression} {amount:0.###}"));
+        }
         foreach (var (id, value) in next.Parameters)
             send(FormattableString.Invariant($"set {id} {(next.Pushed && side < 0 && Sided.Contains(id) ? 0 - value : value)}"));
         mood = next; Showing = name; moodUntil = now.AddSeconds(next.Seconds);
@@ -153,6 +293,25 @@ internal sealed class Behavior
         foreach (var (id, keys) in next.Motion) send($"anim {id} {(next.Pushed && side < 0 && Sided.Contains(id) ? Mirrored(keys) : keys)}");
         motionUntil = now.AddSeconds(next.Motion.Max(track => Seconds(track.Keys)) * .6);
         if (next.Gesture is { } hand && HandBusy?.Invoke() != true) { moodGesture = hand; send($"motion {hand.On}"); }
+    }
+
+    private static Mood PlainClickFace(string name, Mood mood)
+    {
+        var expressions = mood.Expressions.Where(expression => expression == "黑脸").ToArray();
+        if (name != "震惊") return mood with { Expressions = expressions };
+
+        // 点尾巴时仍会避开，眼睛和嘴换成冷淡的侧目。
+        return mood with
+        {
+            Expressions = expressions,
+            Parameters =
+            [
+                .. mood.Parameters.Where(parameter => parameter.Id is "FaceAngleX" or "FaceAngleY"),
+                ("EyeOpen", .62), ("ParamEyeBallX", -.38), ("ParamEyeBallY", -.18),
+                ("ParamBrowLY", -.33), ("ParamBrowRY", -.42), ("ParamMouthForm", -.74)
+            ],
+            HoldMouth = true
+        };
     }
 
     // What turns with the side she was touched on, held as well as moved.
@@ -203,28 +362,75 @@ internal sealed class Behavior
         : y is > .5 and < .6 && x is < .28 or > .74 ? "hand" : y is > .43 and < .62 ? "skirt"
         : y >= .62 && x is < .36 or > .62 ? "tail" : "body";
 
-    private string ClickMood(string zone) => zone switch
+    internal static string ClickMood(string zone, int level) => AffectionTouchReactions.ForZone(zone, level)?.Click ?? (zone switch
     {
-        "head" => "摸头", "face" => "戳脸", "hand" => "开心", "skirt" => Smitten?.Invoke() == true ? SmittenMoods[random.Next(SmittenMoods.Length)] : "护裙", "tail" => "震惊", _ => "心虚",
-    };
+        "face" => "戳脸",
+        "body" or "waist" when level == 0 => DisgustedBodyClick,
+        "skirt" when level == 0 => "护裙·嫌弃",
+        "skirt" => "护裙",
+        _ => "心虚",
+    });
 
-    // 亲密度到了最高一级：戳裙子时换成这三种之一，概率平分（本机加，2026-11-08）。
-    internal static readonly string[] SmittenMoods = ["娇羞", "娇羞前倾", "娇羞抚胸"];
-    internal Func<bool>? Smitten { get; set; }
     // 专注模式（番茄钟）：待机只做安静的小动作，不嘀咕、不演小剧场、不报时（本机加，2026-11-08）。
     internal bool Quiet { get; set; }
     private static readonly string[] QuietMoods = ["思考", "发呆", "歪头"];
 
-    internal void Click(string zone, DateTime now, int side = 1)
+    internal void Click(string zone, DateTime now, int side = 1, int level = 1)
     {
+        var reaction = ClickReaction(zone, now, level);
+        Show(reaction, now, side, force: reaction == "挨打", plainFace: level == 0);
+    }
+
+    internal string ClickReaction(string zone, DateTime now, int level)
+    {
+        bool topChest = zone == "chest" && level == Affection.Levels.Length;
+        if (!topChest) ResetChestPokes();
+        string defaultReaction = ClickMood(zone, level);
+        if (defaultReaction == DisgustedBodyClick) return defaultReaction;
         clicks.RemoveAll(time => now - time > ClickSpan);
         clicks.Add(now);
-        if (clicks.Count >= ClicksForBasin) { clicks.Clear(); Show("挨打", now, force: true); return; }
-        Show(ClickMood(zone), now, side);
+        if (clicks.Count >= ClicksForBasin)
+        {
+            clicks.Clear();
+            ResetChestPokes();
+            return "挨打";
+        }
+        if (!topChest) return defaultReaction;
+
+        while (recentChestPokes.TryPeek(out var first) && now - first > ChestPokeWindow)
+            recentChestPokes.Dequeue();
+        if (recentChestPokes.Count == ChestPokesForHeartEyes) recentChestPokes.Dequeue();
+        recentChestPokes.Enqueue(now);
+        return recentChestPokes.Count switch
+        {
+            ChestPokesForHeartEyes => HeartEyesChestPoke,
+            2 => "娇羞抚胸",
+            _ => defaultReaction
+        };
+    }
+
+    internal void ResetChestPokes() => recentChestPokes.Clear();
+
+    internal string NextFacePoke(int level, DateTime now)
+    {
+        if (level == FacePokes.Length - 1)
+        {
+            recentTopFacePokes.Enqueue(now);
+            if (recentTopFacePokes.Count > FacePokesForBlush) recentTopFacePokes.Dequeue();
+            if (recentTopFacePokes.Count == FacePokesForBlush && now - recentTopFacePokes.Peek() <= FacePokeBlushWindow)
+                return BlushingFacePoke;
+        }
+        else recentTopFacePokes.Clear();
+        var poses = FacePokes[level];
+        int index = nextFacePoke[level];
+        nextFacePoke[level] = (index + 1) % poses.Length;
+        return poses[index].Name;
     }
 
     internal void DragStart()
     {
+        MotionRevision++;
+        ResetChestPokes();
         EndMood();
         dragging = true;
         send("exp 圈圈眼 1");
@@ -283,9 +489,10 @@ internal sealed class Behavior
     internal void SkitPlayed(DateTime now) => lastSkitAt = now;
     internal void SkitMissed(DateTime now) { if (now > lastSkitAt) nextIdle = now.AddSeconds(45); }
 
-    internal void Tick(DateTime now, bool speaking, int intervalSeconds)
+    internal void Tick(DateTime now, bool speaking, int intervalSeconds, bool allowIdle = true)
     {
         if (mood != null && now >= moodUntil) EndMood();
+        if (!allowIdle) { nextIdle = now.AddSeconds(intervalSeconds); return; }
         if (speaking || dragging || Touching || mood != null) return;
         var local = now.ToLocalTime();
         // 整点报时：每个钟点最多一次，不受“隔多久做一个小动作”的限制。

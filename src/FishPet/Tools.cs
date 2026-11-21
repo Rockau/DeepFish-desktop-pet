@@ -52,24 +52,28 @@ internal static class Tools
         Tool("say", "用你在桌面上的身体说话（头上冒气泡）。每次回用户都用它说，不用等用户提醒。要说的几句先想好，写在同一个 text 里一次发出去：一行一个气泡，" +
             "会一句接一句说完；别说一句、想一会儿、再调一次。text 里用〔〕写神情和动作（词和规则见 " + BodyGuide + "），〔〕不会显示，身体照做；说之前在心里把这几句演一遍，说到哪儿脸和身子怎么变，就在哪儿写〔〕；只在开头写一个，整句身体就只动那一下。" +
             "字按说话的节奏一个个出来，碰到〔〕先做动作，动作跟着后面那段话的长短和语气伸缩。" +
-            "会等之前的话演完再开始；返回时第一句已经开始说了；返回里有 note 的，是身体想跟你说的话（哪些词没看懂、要不要边说边动）。" + GuideNote,
-            """{"text":{"type":"string","minLength":1,"maxLength":2000}}""", ["text"]),
+            "会等之前的话演完再开始；返回时第一句已经开始说了；返回里有 note 的，是身体想跟你说的话（哪些词没看懂、要不要边说边动）。" +
+            "藤田琴音配音开启时，speech 可附一段日语朗读稿。speech 或旧参数 audio 可把 text 作为单个气泡的字幕，统一用藤田琴音配音。" + GuideNote,
+            """{"text":{"type":"string","minLength":1,"maxLength":2000},"speech":{"type":"string","maxLength":120},"audio":{"type":"string"}}""", ["text"]),
         Tool("look_in_mirror", "照镜子，看你现在的样子（白底图，只照头到腰）。try 可选：写上想试的神情和动作（〔〕里那些词，不用写括号），" +
             "会先真的做一遍，从头到做完按先后给六张（三列两行，从左到右、从上到下）。", """{"try":{"type":"string","maxLength":200}}""", []),
         Tool("look_back", "回头看你刚才说话时的样子：say 的每句话都会自动拍下来，从头到说完按先后六张，留半小时、最多 20 句。" +
             "which 可选：1 是最近一句，2 是再前一句……不填就是最近一句。返回里有那句话（said）、几秒前（secondsAgo）和还能看的几句（recent）。",
             """{"which":{"type":"integer","minimum":1,"maximum":20}}""", []),
+        Tool("performance_library", "管理可分享的表情、动作和小剧场。list 查看条目和导出 id；parameters 查看模型参数 ID；export 用 category 导出整栏，也可给 id 只导出一项；import 把用户给的 JSON 作为 package 原样交给本机桌宠，同名会另存。play 用 category 和 id 试播。小剧场可用 add_skit 传 name 和 script，每行台词|动作|秒数；remove_skit 和 restore_skit 按 name 移除或恢复。",
+            """{"operation":{"type":"string","enum":["list","parameters","export","import","play","add_skit","remove_skit","restore_skit"]},"category":{"type":"string","enum":["expression","action","skit"]},"id":{"type":"string","maxLength":140},"name":{"type":"string","maxLength":48},"script":{"type":"string","maxLength":6000},"autoPlay":{"type":"boolean"},"package":{"type":"object"}}""", ["operation"]),
         Tool("set_activity", "你开始或做完一件要盯着看的事（看视频、读文章、写东西……kind 随便起个名字）。有事在做时你会戴上黑框眼镜，全做完才摘；" +
             "用户自己给你戴着眼镜时不叠戴、也不摘。", """{"kind":{"type":"string","minLength":1,"maxLength":40},"active":{"type":"boolean"}}""", ["kind", "active"]),
         Tool("dress", "换衣服、戴或摘配饰，会一直保持、下次启动也记得。衣服：" + Labels(Outfit.Clothes) + "；配饰：" + Labels(Outfit.Accessories) +
             "（兔牙张嘴时才看得到）。wear 是要穿戴上的，remove 是要脱掉摘下的。返回现在穿戴着的。",
             """{"wear":{"type":"array","items":{"type":"string"}},"remove":{"type":"array","items":{"type":"string"}}}""", []),
         Tool("get_state", "读你现在的状态和设置：体型、穿戴、帧率、大小、气泡大小和停多久、全屏时藏不藏（现在是不是正藏着）、视线是否跟着鼠标、空闲小动作的间隔、窗口位置、是否正在说话；" +
-            "插件有新版本时 update 里写着落后几处改动、各是什么；affection 是你和用户的羁绊（0–200 分，五级：初识、磨合、同频、默契、羁绊），说话的亲疏可以跟着它走；" +
-            "focus 是番茄钟（phase：work 专注中、break 休息中、none 没开）；memory 只是小本本里有几条（内容用 recall 查）。", "{}"),
-        Tool("focus", "番茄钟、专注陪伴：用户说要专注、学习、陪他认真一会儿时用。action：start 开始专注 25 分钟（你会戴上眼镜，只做安静的小动作，不嘀咕、不演小剧场），" +
-            "到点会响一声提示音、伸个懒腰叫他休息，休息 5 分钟后再响一声问他继续不继续；stop 提前结束。专注时别用 say 打扰他，除非他先找你。",
-            """{"action":{"type":"string","enum":["start","stop"]}}""", ["action"]),
+            "插件有新版本时 update 里写着落后几处改动、各是什么；affection 是你和用户的关系值（−50 到 200 分，反感、初识、磨合、同频、默契、羁绊），说话的亲疏可以跟着它走；" +
+            "focus 是计时状态（phase：work 专注中、break 休息中、alarm 等待闹钟、none 未计时）；memory 只是小本本里有几条（内容用 recall 查）。", "{}"),
+        Tool("focus", "专注计时和闹钟。用 start 开始，mode 可选 stopwatch（正计时）、countdown（默认倒计时，可以传 minutes，结束后休息 5 分钟）、" +
+            "deadline（专注至指定时刻）、alarm（只在指定时刻响铃）。deadline 和 alarm 用 time 指定本机 24 小时时刻（如 18:30，已过则定到明天）。" +
+            "用 stop 结束当前计时，用 duration 配合 minutes 保存下轮倒计时时长（1 到 180 分钟）。专注时别用 say 打扰用户，除非用户先找你。",
+            """{"action":{"type":"string","enum":["start","stop","duration"]},"mode":{"type":"string","enum":["countdown","stopwatch","deadline","alarm"]},"minutes":{"type":"integer","minimum":1,"maximum":180},"time":{"type":"string"}}""", ["action"]),
         Tool("remember", "记进小本本（Claude、DSH 共用）。只记老大自己的、以后用得上的事，一句话≤40字；不记工作细节、闲聊、密码。日程、纪念日要带 date（纪念日可只写 05-20）；slot 同类只留最新（如 偏好·饮料）；source guess 是你猜的。",
             """{"content":{"type":"string"},"category":{"type":"string","enum":["偏好","事实","日程","纪念日"]},"date":{"type":"string"},"slot":{"type":"string"},"importance":{"type":"integer","minimum":1,"maximum":3},"source":{"type":"string","enum":["said","guess"]}}""", ["content"]),
         Tool("recall", "查小本本：和老大本人有关时才查，一轮最多一次。query 关键词；archive 为 true 连以前的也查。",
@@ -78,12 +82,13 @@ internal static class Tools
             """{"id":{"type":"string"},"content":{"type":"string"},"source":{"type":"string","enum":["said","guess"]}}""", ["id"]),
         Tool("update_settings", "改设置，只改给了的项，保存下来。shape 体型：small（小只，默认）、chibi（Q 版）、full（全身）；fps 帧率：30、60、90、120；" +
             "scale 大小 0.5–2；bubble_scale 气泡大小 0.5–2（字和气泡一起缩放，跟 scale 无关）；bubble_seconds 说完后气泡停多久：0 按字数自动（5–20 秒，默认），" +
-            "5–180 固定秒数，-1 一直留着到下一句或被点掉；" +
+            "5–180 固定秒数，-1 一直留着到下一句或被点掉；voice_enabled 藤田琴音配音开关（兼容旧参数 tts_enabled）；volume 音量 0–1；" +
+            "voice_language 配音语言：auto 跟随台词、zh 中文、ja 日语；" +
             "hide_on_fullscreen 别的程序全屏（游戏、视频）时藏起来、不画，默认开；" +
             "follow_mouse 视线跟着鼠标；start_hidden 启动时先收起待命、用户叫才出场（默认 true；托盘里叫「跟随 Agent 一起启动」，开关和它相反）；keep_on_screen 拖到屏幕边会弹回来（默认关，开了就拖不出屏幕）；idle_seconds 没人理你时多久做一个小动作（15–600 秒）；check_updates 启动时和每 12 小时去 GitHub 看有没有新版本，默认关；coax_sleep 每晚到点自己出来哄睡（四层，从 sleep_at 起，之后 +10、+15、+17 分钟加码），coax_lunch 每天到点提醒吃午饭，都按这台电脑的时钟、默认关；sleep_at 睡觉提醒几点开始（\"23:45\" 这样，22:00–02:00，15 分钟一档，默认 00:30）；lunch_at 午饭提醒几点（11:00–13:30，15 分钟一档，默认 11:30）；birthday 用户的生日（10-21 这样，那天你会说生日快乐；空字符串清掉）；" +
             "tex_scale 立绘清晰度：1 高清（4096 原图）、0.5 标准（默认，2048）、0.25 流畅（1024，省显存），改档位立绘会重新加载几秒；" +
             "music_dance 听到电脑在放音乐就跟着跳（默认开）：只认有拍子的声音，说话、播客不会让她乱蹦；music_apps 白名单（进程名，逗号分隔），只有这些音乐软件在出声才跳；dance_music_apps 认音乐软件的声音（默认开）、dance_browser 认浏览器网页的声音（默认关，开了看视频时也可能跟着跳），两个都关就不跳；dance_strength 跳得多猛：soft 柔和（默认）、normal 标准、strong 激烈（幅度更大、更快，适合摇滚、电子）。",
-            """{"shape":{"type":"string","enum":["small","chibi","full"]},"fps":{"type":"integer","enum":[30,60,90,120]},"scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_seconds":{"type":"integer","minimum":-1,"maximum":180},"hide_on_fullscreen":{"type":"boolean"},"follow_mouse":{"type":"boolean"},"start_hidden":{"type":"boolean"},"keep_on_screen":{"type":"boolean"},"idle_seconds":{"type":"integer","minimum":15,"maximum":600},"check_updates":{"type":"boolean"},"coax_sleep":{"type":"boolean"},"coax_lunch":{"type":"boolean"},"sleep_at":{"type":"string"},"lunch_at":{"type":"string"},"birthday":{"type":"string"},"tex_scale":{"type":"number","enum":[0.25,0.5,1]},"music_dance":{"type":"boolean"},"music_apps":{"type":"string"},"dance_music_apps":{"type":"boolean"},"dance_browser":{"type":"boolean"},"dance_strength":{"type":"string","enum":["soft","normal","strong"]}}""", []),
+            """{"shape":{"type":"string","enum":["small","chibi","full"]},"fps":{"type":"integer","enum":[30,60,90,120]},"scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_scale":{"type":"number","minimum":0.5,"maximum":2},"bubble_seconds":{"type":"integer","minimum":-1,"maximum":180},"voice_enabled":{"type":"boolean"},"volume":{"type":"number","minimum":0,"maximum":1},"tts_enabled":{"type":"boolean"},"voice_language":{"type":"string","enum":["auto","zh","ja"]},"hide_on_fullscreen":{"type":"boolean"},"follow_mouse":{"type":"boolean"},"start_hidden":{"type":"boolean"},"keep_on_screen":{"type":"boolean"},"idle_seconds":{"type":"integer","minimum":15,"maximum":600},"check_updates":{"type":"boolean"},"coax_sleep":{"type":"boolean"},"coax_lunch":{"type":"boolean"},"sleep_at":{"type":"string"},"lunch_at":{"type":"string"},"birthday":{"type":"string"},"tex_scale":{"type":"number","enum":[0.25,0.5,1]},"music_dance":{"type":"boolean"},"music_apps":{"type":"string"},"dance_music_apps":{"type":"boolean"},"dance_browser":{"type":"boolean"},"dance_strength":{"type":"string","enum":["soft","normal","strong"]}}""", []),
         Tool("coax", "哄睡演示：把桌宠窗口摆到屏幕正中（配合放大和表情，快速看各层递进的动作效果）。stage：1 第一层（温柔关心）、2 第二层（严肃）、3 第三层（生气「时间到了」）、4 第四层（黑脸质问）、0 回到原来的位置。第四层演示用固定的一句质问（一个字一个字慢慢说）。5 演示全部待机小动作；6 演示一个待机小剧场（text 给小剧场名，不给就随机，不用调 say）。",
             """{"stage":{"type":"integer","minimum":0,"maximum":6},"text":{"type":"string"}}""", ["stage"]),
         Tool("recent_events", "用户最近怎么碰了你：点了哪里（zone：head 头、face 脸、hand 手、skirt 裙子、tail 尾巴、body 身上）、你的反应（reaction）、拖动和放下。" +

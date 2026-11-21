@@ -15,7 +15,84 @@ VerifyAlarms();
 VerifyWelcome();
 VerifyDance();
 VerifyBeatTracker();
+VerifyPerformanceLibrary();
 Console.WriteLine($"FishPet: {checks} checks passed.");
+
+void VerifyPerformanceLibrary()
+{
+    const string model = "大肥鱼";
+    const string action = PerformanceLibrary.Action;
+    const string skit = PerformanceLibrary.Skit;
+    var directory = Directory.CreateTempSubdirectory("deepfish-library-");
+    var path = Path.Combine(directory.FullName, "library.json");
+    PerformanceLibrary Open(string file) => new(file, model, ["ParamMouthForm"],
+        (_, reference) => reference == "Cue:点头", name => Body.CueReadable(name));
+    try
+    {
+        var library = Open(path);
+        var item = new PerformanceItem("点头练习", Parameters: new() { ["ParamMouthForm"] = .4 },
+            Tracks: new() { ["FaceAngleY"] = [new(0, 0), new(.5, -10), new(1, 0)] }, Seconds: 1);
+        var package = PerformanceLibrary.Package(new(1, action, model, [item]));
+        Check(library.Import(action, package, []).SequenceEqual(["点头练习"]), "import a numeric gesture");
+        Check(library.Import(action, package, []).SequenceEqual(["点头练习（2）"]), "same name imports as a copy");
+        Check(PerformanceLibrary.ToMood(Open(path).Entries(action)[0]).Motion!.Single() ==
+            ("FaceAngleY", "0:0 0.5:-10 1:0"), "saved keyframes reload in renderer format");
+
+        string before = File.ReadAllText(path);
+        void Reject(PerformancePack pack)
+        {
+            try { library.Import(action, PerformanceLibrary.Package(pack), []); }
+            catch (ArgumentException)
+            {
+                Check(File.ReadAllText(path) == before && library.Entries(action).Length == 2, "a failed import leaves the entire library unchanged");
+                return;
+            }
+            throw new Exception("bad performance package was accepted");
+        }
+        Reject(new(1, action, model, [item, item with { Parameters = new() { ["ViewX"] = 100 } }]));
+        Reject(new(1, action, "另一款模型", [item]));
+        Reject(new(1, action, model, [item with { Tracks = new() { ["FaceAngleY"] = [new(.5, 0), new(.5, -10)] } }]));
+        Reject(new(1, action, model, [item with { Parameters = new() { ["GhostParameter"] = .5 } }]));
+
+        const string reservedName = "歪头:左";
+        Check(Body.CueReadable(reservedName) && Body.CueReadable(reservedName + "（2）"), "the cue parser ignores the suffix of a motion modifier");
+        var alias = library.Add(action, [item with { Name = reservedName }], []).Single();
+        Check(!Body.CueReadable(alias), "importing a reserved cue name assigns a usable name");
+
+        var script = "@道具 单片眼镜\n准备好了！|点头|1\n|微笑|2";
+        var scene = new PerformanceItem("彩排", Script: script);
+        library.Add(skit, [scene], []);
+        library.SetSkitRemoved(scene.Name, true);
+        var restored = Open(path);
+        Check(restored.RemovedSkits.SequenceEqual([scene.Name]) && restored.Entries(skit).Single().Script == script, "removing a skit persists without losing its script");
+        restored.SetSkitRemoved(scene.Name, false);
+        Check(Open(path).RemovedSkits.Count == 0, "restoring a skit survives a reload");
+
+        var folder = new DirectoryInfo(AppContext.BaseDirectory);
+        while (folder != null && !File.Exists(Path.Combine(folder.FullName, "skits.txt"))) folder = folder.Parent;
+        Check(folder != null, "shipped skits located");
+        var stock = SkitScript.ReadStock(Path.Combine(folder!.FullName, "skits.txt"));
+        var visible = stock.Where(entry => !entry.Hidden).Select(entry => entry.Item).ToArray();
+        Check(visible.Any(entry => entry.Name == "跳舞") && stock.Any(entry => entry.Hidden && entry.Item.Condition == "生日"), "legacy shows and hidden seasonal shows retain their settings");
+        var shared = Open(Path.Combine(directory.FullName, "imported.json"));
+        Check(shared.Import(skit, shared.Export(skit, visible), visible.Select(entry => entry.Name)).Length == visible.Length,
+            "the whole visible stock skit collection can be shared and reimported");
+        const string oldScript = "慢慢来。|点头|18";
+        var normalized = SkitScript.ForSharing(oldScript, SkitScript.Parse(oldScript, strict: false));
+        Check(SkitScript.Parse(normalized, strict: true).Steps.Single().Seconds == 10, "old long timings export as played");
+
+        var chineseScript = string.Join('\n', Enumerable.Repeat(new string('鱼', 200) + "|点头|1", 20));
+        var longItems = Enumerable.Range(1, 6).Select(number => new PerformanceItem($"长剧本 {number}", Script: chineseScript)).ToArray();
+        var escapedPackage = System.Text.Json.JsonSerializer.SerializeToElement(shared.Export(skit, longItems));
+        Check(escapedPackage.GetRawText().Length > PerformanceLibrary.MaxPackageBytes &&
+            shared.Import(skit, escapedPackage, []).Length == longItems.Length, "JSON Unicode escaping does not inflate the import size limit");
+    }
+    finally
+    {
+        foreach (var file in directory.GetFiles()) file.Delete();
+        directory.Delete();
+    }
+}
 
 // 待机自言自语：模型现编的「话|动作|道具」怎么解析，数据文件里的动作词她都做得出来，抽选能抽到小剧场。
 void VerifyIdleSelfTalk()
@@ -231,7 +308,7 @@ void VerifyLive2DBehavior()
     Check(Behavior.Moods.Where(mood => mood.Key != "摸头").All(mood => mood.Value.Motion!.All(track => track.Id is not ("ViewRoll" or "ViewX"))), "no roly-poly swaying");
     // She jumps only when startled, and heart eyes are for love, which none of her reflexes is (the owner, 2026-11-02).
     Check(Behavior.Moods.Where(mood => mood.Value.Motion!.Any(track => track.Id == "ViewY")).Select(mood => mood.Key).Order().SequenceEqual(["打瞌睡", "震惊"]), "jumping only in fright");
-    // 例外是亲密度满档时戳裙子的“娇羞”：那就是爱意（用户定的，2026-11-08）。
+    // 例外是最高好感连戳胸部触发的“娇羞”。
     // 摸头摸满 8 秒后松手的“摸后腻歪”也是爱意，同样可以有爱心眼（用户定的，2026-11-10）。
     Check(Behavior.Moods.Where(mood => mood.Key is not ("娇羞" or "摸后腻歪")).All(mood => !mood.Value.Expressions.Contains("爱心眼")), "no heart eyes without love");
     Check(Behavior.Zone("small", .5, .05, worn) == "head" && Behavior.Zone("small", .5, .24, worn) == "face", "small head and face");
@@ -243,7 +320,7 @@ void VerifyLive2DBehavior()
     Check(Behavior.Zone("small", .85, .75, ["尾巴开关"]) == "skirt" && Behavior.Zone("full", .1, .7, ["尾巴开关"]) == "skirt", "no tail to touch once it is put away");
     Check(Behavior.Zone("small", .5, .8, ["裙子切换"]) == "skirt" && Behavior.Zone("small", .5, .4, ["裙子切换"]) == "body", "a long skirt covers her legs, not her chest");
 
-    live2d.Click("head", start);
+    live2d.Click("head", start, level: Affection.Levels.Length);
     Check(live2d.Showing == "摸头" && Said("exp 脸红 1") && Said("set EyeSmile 0.9"), "stroking her head");
     Check(sent.Any(command => command.StartsWith("anim ViewRoll ")), "her body moves with her face");
     live2d.Tick(start.AddSeconds(1), false, 40);
@@ -254,9 +331,10 @@ void VerifyLive2DBehavior()
 
     sent.Clear();
     live2d.Click("face", start.AddSeconds(4), 1);
-    Check(Said("set FaceAngleX 14") && Said("anim FaceAngleX 0:0 .08:12 .3:6 1.2:0"), "poked from the left she turns away to the right");
-    live2d.Click("tail", start.AddSeconds(4.2));
+    Check(Said("set FaceAngleX -14") && Said("set FaceAngleZ -8") && Said("anim FaceAngleX 0:0 .08:-12 .3:-6 1.2:0"), "poked on the screen's left cheek she turns toward that side");
+    live2d.Click("tail", start.AddSeconds(4.2), level: 0);
     Check(Said("exp ＞＜ 0") && live2d.Showing == "震惊", "a new reaction replaces the one before");
+    Check(!Said("exp 圈圈眼 1") && Said("set ParamMouthForm -0.74"), "a negative tail click turns away with a plain frown");
     Check(!sent.Any(command => command.StartsWith("anim ViewY ")), "movements do not pile up on quick clicks");
     for (int i = 0; i < 3; i++) live2d.Click("body", start.AddSeconds(4.4 + i * .2));
     Check(live2d.Showing == "挨打" && Said("exp 钢盆 1") && Said("anim ViewSquash 0:0 .09:.11 .3:.02 .5:.05 .75:.01 1.4:0"), "clicking too often brings the basin down");
@@ -315,8 +393,8 @@ void VerifyLive2DBehavior()
     dazed.Tick(start.AddSeconds(500), false, 1);
     Check(sent.Count == 0 && dazed.Showing == null, "no small move while she is being stroked or dizzy");
     dazed.Touching = false;
-    foreach (var zone in new[] { "head", "face", "hand", "skirt", "tail", "body" })
-        Check(Behavior.Moods.ContainsKey(Behavior.HoverMood(zone)), "a hover reaction for " + zone);
+    foreach (var zone in new[] { "head", "face", "hand", "chest", "skirt", "tail", "body" })
+        Check(Behavior.Moods.ContainsKey(Behavior.HoverMood(zone, 1)), "a hover reaction for " + zone);
     foreach (var after in new[] { "摸后失落", "摸后不舍", "摸后腻歪" })
         Check(Behavior.Moods.TryGetValue(after, out var afterMood) && afterMood.Expressions.Contains("脸红"), after + " blushes");
     foreach (var shape in Shape.All)
@@ -330,10 +408,199 @@ void VerifyLive2DBehavior()
     sent.Clear();
     right.Resume(start, 40);
     right.Click("face", start, -1);
-    Check(Said("set FaceAngleX -14") && Said("anim FaceAngleX 0:0 .08:-12 .3:-6 1.2:0"), "poked from the right she turns away to the left");
+    Check(Said("set FaceAngleX 14") && Said("set FaceAngleZ 8") && Said("anim FaceAngleX 0:0 .08:12 .3:6 1.2:0"), "poked on the screen's right cheek she turns toward that side");
     Check(Said("anim FaceAngleY 0:0 .08:-6 .4:-2 1.2:0") && Said("anim ViewSquash 0:0 .06:.04 .25:0 1.2:0"), "only her turning flips, not her flinch");
+    var earlyFacePokes = Behavior.FacePokeActions(0).ToArray();
+    int stageAt50 = Affection.LevelOf(50), stageAt100 = Affection.LevelOf(100);
+    string slightSurprise = Behavior.FacePokeActions(stageAt50).Single();
+    var squeezedFacePokes = Behavior.FacePokeActions(stageAt100).ToArray();
+    Check(slightSurprise == "戳脸·轻微惊讶" && squeezedFacePokes.SequenceEqual(["戳脸·挤眼惊呼", "戳脸·挤眼噘嘴"]),
+        "50 points reacts with slight surprise and 100 with the squeezed-eye faces");
+    Check(right.NextFacePoke(0, start) == earlyFacePokes[0] && right.NextFacePoke(stageAt100, start) == squeezedFacePokes[0]
+        && right.NextFacePoke(0, start) == earlyFacePokes[1] && right.NextFacePoke(stageAt100, start) == squeezedFacePokes[1],
+        "the low and familiar stages each alternate their own expressions");
+    double MaxTurn(string name) => Behavior.Moods[name].Motion!.Single(track => track.Id == "FaceAngleX").Keys
+        .Split(' ').Max(key => Math.Abs(double.Parse(key.Split(':')[1], System.Globalization.CultureInfo.InvariantCulture)));
+    Check(MaxTurn(earlyFacePokes[0]) < MaxTurn(slightSurprise) && squeezedFacePokes.All(name => MaxTurn(name) > MaxTurn(slightSurprise)),
+        "face-poke turns get larger from the initial stage through 50 and 100 points");
     sent.Clear();
-    right.Click("hand", start.AddSeconds(10));
+    right.Show(squeezedFacePokes[0], start.AddSeconds(2), side: -1, force: true);
+    Check(Said("anim FaceAngleX 0:0 .11:20 .37:19 .57:15 .80:8 1.10:0"),
+        "the stronger turn holds briefly and still mirrors to the cheek that was poked");
+    int topStage = Affection.Levels.Length;
+    foreach (var zone in new[] { "head", "hand", "tail", "chest" })
+    {
+        var byLevel = Enumerable.Range(0, topStage + 1).Select(level =>
+        {
+            var reflex = new Behavior(_ => { }, () => worn, new Random(5));
+            var touch = AffectionTouchReactions.ForZone(zone, level)!.Value;
+            string click = reflex.ClickReaction(zone, start, level);
+            Check(click == touch.Click && Behavior.Moods.ContainsKey(click)
+                && AffectionTouchReactions.ClickForEvent(touch.Event, level) == click,
+                zone + " selects the click shown in affection settings");
+            string hover = Behavior.HoverMood(zone, level);
+            Check(hover == (touch.Hover ?? "悬停身") && Behavior.Moods.ContainsKey(hover),
+                zone + " selects the hover for this affection level");
+            return (click, hover);
+        }).ToArray();
+        Check(byLevel.Select(reaction => reaction.click).Distinct().Count() == topStage + 1,
+            zone + " has a distinct click at each stage");
+        if (zone is "head" or "hand" or "tail")
+            Check(byLevel.Select(reaction => reaction.hover).Distinct().Count() == topStage + 1,
+                zone + " has a distinct hover at each stage");
+    }
+    var negative = new Behavior(sent.Add, () => worn, new Random(5));
+    sent.Clear();
+    negative.Click("head", start, level: 0);
+    Check(negative.Showing == "点头部·黑脸" && Said("exp 黑脸 1") &&
+        Behavior.Moods[Behavior.HoverMood("face", 0)].Expressions.SequenceEqual(["黑脸"]),
+        "a negative score blackens both the head-click response and the face hover");
+    Check(Enumerable.Range(0, 3).All(level => !Affection.AllowsInitiative(level))
+        && Affection.AllowsInitiative(3), "proactive hover and idle start at the familiar stage");
+    Check(Enumerable.Range(1, 3).All(level => Behavior.HoverMood("head", level) == Behavior.HoverMood("face", level)
+        && !Behavior.Moods[Behavior.HoverMood("face", level)].Expressions.Contains("脸红")),
+        "hovering over the face or head shares a stage and starts without blushing");
+    var invitation = Behavior.Moods[Behavior.HoverMood("head", topStage)];
+    Check(invitation.Motion is { } invitationMotion && invitationMotion.Any(track => track.Id == "EyeOpen" && track.Keys.Contains(":-1"))
+        && invitationMotion.Any(track => track.Id == "LeanInput" && track.Keys.Contains(":-18")),
+        "the top hover leans forward and closes both eyes");
+    Check(earlyFacePokes.SequenceEqual(["戳脸·半睁眼嫌弃", "戳脸·皱眉瞪眼"])
+        && Behavior.FacePokeActions(1).SequenceEqual(["戳脸·侧目"]), "the sketches are reserved for negative affection");
+    var guard = Behavior.Moods[AffectionTouchReactions.ClickForEvent("点胸口", 0)!];
+    var waryChest = Behavior.Moods[AffectionTouchReactions.ClickForEvent("点胸口", 1)!];
+    foreach (var zone in new[] { "body", "waist" })
+    {
+        var negativeClick = Behavior.ClickMood(zone, 0);
+        Check(negativeClick == "点身体·黑脸" && Behavior.Moods[negativeClick].Expressions.SequenceEqual(new[] { "黑脸" }),
+            $"the negative {zone} click frowns under full shade");
+        Check(Behavior.ClickMood(zone, 1) == "心虚", $"the neutral {zone} click still looks startled");
+        Check(Enumerable.Range(0, 6).All(i => live2d.ClickReaction(zone, DateTime.UnixEpoch.AddMilliseconds(i * 120), 0) == negativeClick),
+            $"rapid negative {zone} clicks still show the dark reaction");
+    }
+    Check(guard.Parameters.Contains(("EyeOpen", .38)) && guard.Gesture != null && guard.Parameters.Contains(("ParamMouthForm", -1))
+        && waryChest.Expressions.Length == 0, "negative chest taps look down and recoil with a hostile frown");
+    Check(AffectionTouchReactions.ClickForEvent("摸手", 0) == "点手·缩手" &&
+        AffectionTouchReactions.ClickForEvent("摸手", 1) == "点手·迟疑", "the strongest hand rejection belongs to the negative band");
+    Check(HeadStrokeFace.At(0, 0, false, 4.99, 0).Build().Expressions.Length == 0 &&
+        HeadStrokeFace.At(0, 0, true, 5, 0).Build().Expressions.SequenceEqual(["黑脸"]),
+        "the negative hold changes from a cold look to black face after sustained rubbing");
+    var impatient = HeadStrokeFace.At(0, 1, true, 30, 1);
+    var negativeRelease = HeadStrokeFace.ReleaseAt(0, 30, .999, "抚摸头5");
+    Check(impatient.Blush == 0 && impatient.Melt == 0 && impatient.Build().Parameters["LeanInput"] > 0
+        && negativeRelease.Mood == HeadStrokeFace.NegativeReleaseMood
+        && Behavior.Moods[negativeRelease.Mood].Expressions.SequenceEqual(["黑脸"]),
+        "extended negative strokes and their release stay dark and lean away instead of melting");
+    var smirk = Behavior.Moods[AffectionTouchReactions.ClickForEvent("点胸口", 3)!];
+    var bashful = Behavior.Moods[AffectionTouchReactions.ClickForEvent("点胸口", topStage)!];
+    Check(guard.Expressions.SequenceEqual(["黑脸"]) && guard.ExpressionStrength == 1 && guard.HoldMouth,
+        "the unfamiliar chest response uses only the full dark face and holds the frown");
+    Check(smirk.Parameters.Contains(("ParamMouthForm", 1)) && smirk.HoldMouth
+        && bashful.Expressions.Contains("脸红"), "the chest interaction goes from smirking to a familiar blush");
+    Check(AffectionTouchReactions.ClickForEvent("摸手", topStage) == "开心"
+        && AffectionTouchReactions.ClickForEvent("摸尾巴", 0) == "震惊", "the recognizable hand and tail reactions are reused at their matching levels");
+    Check(right.NextFacePoke(topStage, start) == "戳脸" && right.NextFacePoke(topStage, start.AddSeconds(1)) == "戳脸",
+        "the top stage starts with the original face-poke action");
+    string blushPoke = right.NextFacePoke(topStage, start.AddSeconds(3));
+    var originalPoke = Behavior.Moods["戳脸"];
+    var blushingPoke = Behavior.Moods[blushPoke];
+    Check(blushingPoke.Expressions.SequenceEqual(originalPoke.Expressions.Append("脸红"))
+        && blushingPoke.Parameters.SequenceEqual(originalPoke.Parameters) && blushingPoke.Motion == originalPoke.Motion,
+        "a third top-stage poke adds blush to the original face and movement");
+    Check(right.NextFacePoke(topStage, start.AddSeconds(8)) == "戳脸", "old pokes expire before new top-stage pokes");
+    double[] blushStarts = [5, 3.5, 2.4, 1.4, .7];
+    for (int level = 1; level <= topStage; level++)
+    {
+        double onset = blushStarts[level - 1];
+        var beforeBlush = HeadStrokeFace.At(level, 0, false, onset - .01, 0);
+        var startedBlush = HeadStrokeFace.At(level, 0, false, onset, 0);
+        Check(beforeBlush.Blush == 0 && !beforeBlush.Build().Expressions.Contains("脸红")
+            && startedBlush.Blush == .25 && startedBlush.Build().Expressions.Contains("脸红"),
+            "head strokes start blushing at the threshold for each affection level");
+    }
+    var startled = HeadStrokeFace.At(2, 1, false, 1, 0).Build();
+    var squeezed = HeadStrokeFace.At(3, 1, false, 1, 0).Build();
+    Check(startled.Parameters.ContainsKey("ParamEyeLOpen") && startled.Expressions.Length == 0
+        && squeezed.Expressions.SequenceEqual(["＞＜"]) && !squeezed.Parameters.ContainsKey("EyeOpen"),
+        "the open-eye looks follow the touch side, and the squeezed-eye artwork stays visible");
+    var smilingHead = HeadStrokeFace.At(topStage, 0, false, 1, 0).Build();
+    var smilingFace = HeadStrokeFace.At(topStage, 0, true, 1, 0).Build();
+    Check(smilingHead.Parameters["EyeOpen"] == .45 && smilingFace.Parameters["EyeOpen"] == 0
+        && smilingFace.Parameters["EyeSmile"] == 1 && smilingFace.Parameters["ParamMouthForm"] == 1
+        && smilingFace.Expressions.SequenceEqual(["脸红"]),
+        "the highest level restores the original smiling eyes and closes them when stroked on the face");
+    var smilingRight = HeadStrokeFace.At(topStage, 1, false, 1, 0).Build();
+    var smilingLeft = HeadStrokeFace.At(topStage, -1, false, 1, 0).Build();
+    Check(smilingRight.Parameters["ParamEyeLOpen"] == 0 && !smilingRight.Parameters.ContainsKey("ParamEyeROpen")
+        && smilingLeft.Parameters["ParamEyeROpen"] == 0 && !smilingLeft.Parameters.ContainsKey("ParamEyeLOpen"),
+        "the original wink mirrors which side of the head is being stroked");
+    var relaxed = HeadStrokeFace.At(topStage, 0, false, 20, 1).Build();
+    Check(relaxed.Expressions.SequenceEqual(["脸红"]) && relaxed.Parameters["LeanInput"] == -17
+        && relaxed.Parameters["EyeOpen"] == 0 && relaxed.Parameters["EyeSmile"] == 1
+        && relaxed.Parameters["MouthPressLipOpen"] == .4, "long strokes still melt into the original closed-eye smile and lean");
+    (double Mouth, double Jaw) StrokeMouth(int level, double seconds, double melt = 0)
+    {
+        var face = HeadStrokeFace.At(level, 0, false, seconds, melt).Build();
+        return (face.Parameters["ParamMouthOpenY"], face.Parameters["JawOpen"]);
+    }
+    for (int level = 1; level <= topStage; level++)
+    {
+        var startMouth = StrokeMouth(level, .1);
+        var firstPart = StrokeMouth(level, .55);
+        var laterPart = StrokeMouth(level, 1.2);
+        var open = StrokeMouth(level, 2);
+        Check(startMouth == (0, 0) && firstPart.Mouth > 0 && firstPart.Mouth < laterPart.Mouth
+            && laterPart.Mouth < open.Mouth && firstPart.Jaw < laterPart.Jaw && laterPart.Jaw < open.Jaw,
+            "mouth and jaw ease from closed to the stage's own opening");
+    }
+    var strokePreview = HeadStrokeFace.Preview(3);
+    var previewOpen = strokePreview.Motion!.Single(track => track.Id == "ParamMouthOpenY").Keys;
+    Check(strokePreview.Parameters.Contains(("ParamMouthOpenY", 0)) && previewOpen.StartsWith("0:0 ")
+        && previewOpen.Contains("1.95:0.69") && previewOpen.EndsWith(" 3:0"),
+        "the stroke preview animates the same mouth opening instead of setting the final pose immediately");
+    var smilePreview = HeadStrokeFace.Preview(topStage);
+    Check(smilePreview.Parameters.Contains(("EyeOpen", 0)) && smilePreview.Parameters.Contains(("EyeSmile", 1))
+        && smilePreview.Expressions.SequenceEqual(["脸红"]),
+        "the highest-level action preview shows her original closed-eye smile");
+    Check(StrokeMouth(3, 20, 1) == (0, 0)
+        && Behavior.Moods["戳脸·挤眼惊呼"].Parameters.Contains(("ParamMouthOpenY", .94)),
+        "melting closes the stroke mouth and a poke still goes straight to its round-mouth expression");
+    for (int level = 1; level <= 2; level++)
+        Check(HeadStrokeFace.ReleaseAngerChance(level, 1) < HeadStrokeFace.ReleaseAngerChance(level, 4)
+            && HeadStrokeFace.ReleaseAngerChance(level, 4) < HeadStrokeFace.ReleaseAngerChance(level, 8),
+            "unfamiliar levels get more likely to be annoyed by longer strokes");
+    for (int level = 4; level <= topStage; level++)
+        Check(HeadStrokeFace.ReleaseAngerChance(level, 1) > HeadStrokeFace.ReleaseAngerChance(level, 4)
+            && HeadStrokeFace.ReleaseAngerChance(level, 4) > HeadStrokeFace.ReleaseAngerChance(level, 8),
+            "close levels get more likely to be annoyed by shorter strokes");
+    Check(HeadStrokeFace.ReleaseAngerChance(1, 8) > HeadStrokeFace.ReleaseAngerChance(2, 8)
+        && HeadStrokeFace.ReleaseAngerChance(topStage, 1) > HeadStrokeFace.ReleaseAngerChance(4, 1),
+        "the extreme levels have the stronger preference");
+    Check(HeadStrokeFace.ReleaseAt(1, 1, .50).Mood == "摸后嫌弃"
+        && HeadStrokeFace.ReleaseAt(1, 8, .50).Mood == "摸太久生气"
+        && HeadStrokeFace.ReleaseAt(1, 8, .95).Mood == "摸后放松",
+        "low affection may react with disdain, irritation, or relaxation depending on time and chance");
+    Check(HeadStrokeFace.ReleaseAt(topStage, 1, .50).Mood == "没摸够生气"
+        && HeadStrokeFace.ReleaseAt(topStage, 1, .95).Mood == "摸后失落"
+        && HeadStrokeFace.ReleaseAt(topStage, 8, 0).Key == "抚摸头3",
+        "a short close stroke may trigger playful anger and a long one uses the existing affectionate response");
+    Check(HeadStrokeFace.ReleaseAt(3, 2.99, 0).Key == "抚摸头1"
+        && HeadStrokeFace.ReleaseAt(3, 3, 0).Key == "抚摸头2"
+        && HeadStrokeFace.ReleaseAt(3, 8, 0).Key == "抚摸头3",
+        "the familiar middle level uses the existing duration-based lines");
+    Check(HeadStrokeFace.ReleaseAt(1, 2, .50, "抚摸头4").Mood == "摸太久生气"
+        && HeadStrokeFace.ReleaseAt(1, 20, .95, "抚摸头4").Mood == HeadStrokeFace.MeltReleaseMood
+        && HeadStrokeFace.ReleaseAt(topStage, 30, 0, "抚摸头5").Key == "抚摸头5",
+        "reaching the long-stroke bonus still allows low-affection anger and keeps the original melt lines");
+    var blushingSqueeze = HeadStrokeFace.At(4, 0, true, 1.6, 0);
+    var (closeParameters, closeExpressions) = blushingSqueeze.Build();
+    var pose = new Mood(closeExpressions, closeParameters.Select(pair => (pair.Key, pair.Value)).ToArray(),
+        BlushStrength: blushingSqueeze.Blush);
+    sent.Clear();
+    new Behavior(sent.Add, () => worn, new Random(3)).Show("摸头互动", start, preview: pose);
+    Check(Said("exp ＞＜ 1") && Said(FormattableString.Invariant($"expamount 脸红 {blushingSqueeze.Blush:0.###}")),
+        "a light blush keeps the squeezed-eye expression at full weight");
+    sent.Clear();
+    right.Click("hand", start.AddSeconds(10), level: topStage);
     Check(Said("motion 默认手切举手"), "clicked on the hand she raises it");
     right.Tick(start.AddSeconds(14), false, 40);
     Check(Said("motion 举手切默认手"), "and lowers it again");
@@ -377,6 +644,13 @@ void VerifyLive2DBehavior()
     // by the rules learned on this model, and her words waiting for what her body does.
     var acting = new List<string>();
     var body = new Body(acting.Add);
+    var clickCommands = new List<string>();
+    var clickBody = new Body(clickCommands.Add);
+    clickBody.Apply("圈圈眼 冷汗 黑脸 抚胸", 0, '\0', plainFace: true);
+    Check(clickCommands.Where(command => command.StartsWith("exp ")).SequenceEqual(new[] { "exp 黑脸 1" })
+        && clickCommands.Contains("motion 默认手切举手"), "custom negative click cues keep the gesture and shadow");
+    clickBody.Apply("圈圈眼");
+    Check(clickCommands.Contains("exp 圈圈眼 1"), "normal body cues can still display special eyes");
     bool Did(string command) => acting.Contains(command);
     double waited = body.Apply("歪头:右 眯眼笑 点头");
     Check(Did("set FaceAngleZ -16") && Did("set EyeOpen 0") && Did("set EyeSmile 1"), "a cue becomes her body, directions as the owner sees her");
@@ -464,7 +738,7 @@ void VerifyLive2DBehavior()
     var underneath = new Behavior(sent.Add, () => worn, new Random(4)) { HandBusy = () => true, Ended = () => restored++ };
     underneath.Resume(start, 40);
     sent.Clear();
-    underneath.Click("hand", start);
+    underneath.Click("hand", start, level: Affection.Levels.Length);
     Check(underneath.Showing == "开心" && !Said("motion 默认手切举手"), "a reflex leaves the hand she has up");
     underneath.Tick(start.AddSeconds(3.1), false, 40);
     Check(restored == 1, "and gives her look back when it ends");
@@ -516,34 +790,42 @@ void VerifyUpdateReminders()
 // 亲密度、番茄钟、连续工作提醒（本机加，2026-11-08）。
 void VerifyBond()
 {
-    // 等级：0–200，五级
+    // 六档，负分档保留原来五档的编号
     Check(Affection.LevelOf(0) == 1 && Affection.LevelOf(19) == 1 && Affection.LevelOf(20) == 2 && Affection.LevelOf(60) == 3 && Affection.LevelOf(110) == 4 && Affection.LevelOf(160) == 5 && Affection.LevelOf(200) == 5, "five levels over 200 points");
-    Check(Affection.Rules.Values.All(rule => rule.Points != 0), "every rule moves the points");
+    string[] neutralEvents = ["戳脸", "摸手", "摸尾巴", "点胸口", "换鞋", "挠脚", "挠腰", "捏脸", "拖裙摆"];
+    Check(Affection.Rules.Where(rule => !neutralEvents.Contains(rule.Key))
+        .All(rule => rule.Value.Points != 0), "original scoring events keep their default values");
+    Check(neutralEvents.All(kind => Affection.Rules[kind] == (0, 0)),
+        "new interactive scoring events start neutral");
+    Check(!Affection.Rules.ContainsKey("戳裙子"), "the skirt no longer has a scoring event");
     var day = new DateTime(2026, 11, 8, 10, 0, 0);
     var a = new Affection();
     for (int i = 0; i < 9; i++) a.Apply("摸头", day.AddMinutes(i));
     Check(a.Points == 5 && a.TodayNet == 5, "head pats count five times a day");
     a.Apply("摸头", day.AddDays(1));
     Check(a.Points == 6 && a.TodayNet == 1, "a new day counts again");
-    a.Apply("戳裙子", day.AddDays(1)); a.Apply("挨打", day.AddDays(1));
-    Check(a.Points == 3, "poking the skirt and hitting take points");
+    a.Apply(Affection.ChestPokeEvent, day.AddDays(1));
+    Check(a.Points == 6, "a chest tap uses the neutral default score");
+    a.Apply("挨打", day.AddDays(1));
+    Check(a.Points == 4, "hitting takes points");
     for (int i = 0; i < 5; i++) a.Apply("挨打", day.AddDays(1));
-    Check(a.Points == 1, "hitting counts twice a day at most");
+    Check(a.Points == 2, "hitting counts twice a day at most");
     var zero = new Affection { Points = 1 };
     zero.Apply("挨打", day);
-    Check(zero.Points == 0, "never below zero");
+    Check(zero.Points == -1 && zero.Level == 0, "early losses enter the new lowest stage");
+    zero.Apply("摸头", day);
+    Check(zero.Points == 0 && zero.Level == 1 && zero.TodayGain == 1, "negative scores recover one point at a time");
     // 每天加分合计最多 15：摸头 5 + 聊天 6 + 番茄 3 + 按时睡 3 = 17，只算 15；扣分不占额度，扣完也不会多给
     var cap = new Affection { Points = 50 };
     for (int i = 0; i < 6; i++) { cap.Apply("摸头", day); cap.Apply("聊天", day); cap.Apply("番茄", day); }
     cap.Apply("按时睡", day);
     Check(cap.Points == 65 && cap.TodayGain == 15, "15 points a day at most");
-    cap.Apply("戳裙子", day); cap.Apply("聊天", day.AddMinutes(5));
-    Check(cap.Points == 64 && cap.TodayNet == 14, "points taken away are not given back that day");
+    cap.Apply("熬夜", day); cap.Apply("聊天", day.AddMinutes(5));
+    Check(cap.Points == 63 && cap.TodayNet == 13, "points taken away are not given back that day");
     cap.Apply("摸头", day.AddDays(1));
-    Check(cap.Points == 65 && cap.TodayGain == 1, "a new day, a new 15");
-    // 每天扣分合计最多 5：戳裙子 3 + 挨打 4 + 熬夜 2 = 9，只扣 5；扣满了加分照常
+    Check(cap.Points == 64 && cap.TodayGain == 1, "a new day, a new 15");
+    // 每天扣分合计最多 5：挨打 4 + 熬夜 2 = 6，只扣 5；扣满了加分照常
     var loss = new Affection { Points = 80 };
-    for (int i = 0; i < 3; i++) loss.Apply("戳裙子", day);
     loss.Apply("挨打", day); loss.Apply("挨打", day); loss.Apply("熬夜", day);
     Check(loss.Points == 75 && loss.TodayLoss == 5, "5 points taken a day at most");
     loss.Apply("摸头", day);
@@ -552,11 +834,11 @@ void VerifyBond()
     Check(loss.Points == 74 && loss.TodayLoss == 2, "a new day, a new 5");
     // 掉级最多掉回“磨合”
     var b = new Affection { Points = 22 };
-    b.Apply("挨打", day); b.Apply("挨打", day); b.Apply("戳裙子", day);
+    b.Apply("挨打", day); b.Apply("挨打", day);
     Check(b.Points == 20 && b.Level == 2, "once 磨合, never back to 初识");
     var c = new Affection { Points = 61 };
     c.Apply("挨打", day);
-    Check(c.Points == 59 && c.Level == 2 && c.Pending.SequenceEqual(["降级"]), "levels can drop, and she says so");
+    Check(c.Points == 59 && c.Level == 2 && c.Pending.Count == 0, "dropping into a quiet stage also clears pending idle dialogue");
     var d = new Affection { Points = 199 };
     d.Apply("按时睡", day);
     Check(d.Points == 200, "200 at most");
@@ -564,21 +846,76 @@ void VerifyBond()
     e.Apply("聊天", day);
     Check(e.Level == 3 && e.Pending.SequenceEqual(["升级"]), "a new level is told");
 
+    // 可按当前级别调整每种互动的分值、日次数和总额度；一次事件批次使用开始时的级别。
+    var configured = new Affection
+    {
+        Points = 19,
+        RuleFor = (level, kind) => kind == "聊天" ? (level == 1 ? 3 : 7, 2, kind) : null,
+        DailyLimitsFor = level => level == 1 ? (4, 2) : (20, 6)
+    };
+    Check(configured.Rule(1, "聊天") == (3, 2) && configured.Rule(2, "聊天") == (7, 2), "each level has its own score rule");
+    configured.Apply("聊天", day);
+    Check(configured.Points == 22 && configured.TodayGain == 3, "cross-level event uses the prior level's score and daily limit");
+    configured.Apply("聊天", day);
+    Check(configured.Points == 29 && configured.TodayGain == 10, "the next event uses the new level");
+    configured.Apply("聊天", day);
+    Check(configured.Points == 29 && configured.Counts["聊天"] == 2, "custom occurrence cap preserves daily counts");
+    var batch = new Affection
+    {
+        Points = 19,
+        RuleFor = (level, kind) => (level == 1 ? 3 : 7, 0, kind),
+        DailyLimitsFor = _ => (20, 20)
+    };
+    batch.Apply("聊天", day, times: 2);
+    Check(batch.Points == 25, "an event batch resolves its tier once");
+    var flipped = new Affection
+    {
+        Points = 80,
+        RuleFor = (_, kind) => kind switch { "摸头" => (-3, 0, kind), "挨打" => (4, 0, kind), _ => null },
+        DailyLimitsFor = _ => (5, 4)
+    };
+    flipped.Apply("摸头", day); flipped.Apply("摸头", day);
+    Check(flipped.Points == 76 && flipped.TodayLoss == 4, "custom penalties use the configured loss budget");
+    flipped.Apply("挨打", day); flipped.Apply("挨打", day);
+    Check(flipped.Points == 81 && flipped.TodayGain == 5 && flipped.TodayLoss == 4, "custom gains and losses have separate budgets");
+    var disabled = new Affection { RuleFor = (_, kind) => (0, 1, kind) };
+    disabled.Apply("摸头", day);
+    Check(disabled.Points == 0 && disabled.Counts["摸头"] == 1, "zero-score events still consume their configured occurrence");
+    disabled.DailyLimitsFor = _ => (0, 0);
+    disabled.RuleFor = (_, kind) => (2, 0, kind);
+    disabled.Apply("聊天", day);
+    Check(disabled.Points == 0, "zero daily budget prevents gains");
+    int earned = flipped.TodayGain, lost = flipped.TodayLoss, counted = flipped.Counts.Values.Sum();
+    var manual = flipped.SetPoints(7, day);
+    Check(manual is { Before: 81, After: 7, Delta: -74 } && flipped.Level == 1, "manual score edits may return below the natural twenty-point floor");
+    Check(flipped.TodayGain == earned && flipped.TodayLoss == lost && flipped.Counts.Values.Sum() == counted, "manual edits do not spend or restore daily allowances");
+    Check(flipped.Pending.Count == 0, "manual edits do not create upgrade or downgrade announcements");
+    flipped.SetPoints(200, day);
+    Check(flipped.Level == 5, "manual score edit can select the highest level");
+    bool manualRange = false;
+    try { flipped.SetPoints(201, day); } catch (ArgumentOutOfRangeException) { manualRange = true; }
+    Check(manualRange && flipped.Points == 200, "invalid manual score leaves state unchanged");
+
     // 睡觉：前一晚最后一次动静几点
     Affection Night(int hour, int minute)
     {
-        var night = new Affection { Points = 50 };
+        var night = new Affection { Points = 70 };
         night.Seen(new DateTime(2026, 11, 7, 21, 0, 0));
         night.Seen(new DateTime(2026, 11, 7, 0, 0, 0).AddHours(hour).AddMinutes(minute));
         night.Seen(new DateTime(2026, 11, 8, 8, 0, 0));
         return night;
     }
-    Check(Night(23, 40) is { Points: 53 } early && early.Pending.SequenceEqual(["早安夸奖"]), "asleep before 0:30: +3 and praise");
-    Check(Night(24, 40) is { Points: 51 } coaxed && coaxed.Pending.SequenceEqual(["早安"]), "asleep 0:30–0:50: +1");
-    Check(Night(24, 55) is { Points: 50 } late && late.Pending.Count == 0, "0:50–1:00: nothing");
-    Check(Night(25, 30) is { Points: 48 } owl && owl.Pending.SequenceEqual(["熬夜念叨"]), "after 1:00: -2 and a nag");
+    Check(Night(23, 40) is { Points: 73 } early && early.Pending.SequenceEqual(["早安夸奖"]), "asleep before 0:30: +3 and praise");
+    Check(Night(24, 40) is { Points: 71 } coaxed && coaxed.Pending.SequenceEqual(["早安"]), "asleep 0:30–0:50: +1");
+    Check(Night(24, 55) is { Points: 70 } late && late.Pending.Count == 0, "0:50–1:00: nothing");
+    Check(Night(25, 30) is { Points: 68 } owl && owl.Pending.SequenceEqual(["熬夜念叨"]), "after 1:00: -2 and a nag");
     var once = Night(25, 30); once.Seen(new DateTime(2026, 11, 8, 9, 0, 0));
-    Check(once.Points == 48 && once.Pending.Count == 1, "one night judged once");
+    Check(once.Points == 68 && once.Pending.Count == 1, "one night judged once");
+    var quietAtNight = new Affection { Points = 0 };
+    quietAtNight.Seen(new DateTime(2026, 11, 7, 23, 40, 0));
+    quietAtNight.Seen(new DateTime(2026, 11, 8, 8, 0, 0));
+    Check(quietAtNight.Points == 3 && quietAtNight.Pending.Count == 0,
+        "quiet stages keep sleep scoring without accumulating greetings");
     var away = new Affection { Points = 50 };
     away.Seen(new DateTime(2026, 11, 7, 14, 0, 0)); away.Seen(new DateTime(2026, 11, 8, 8, 0, 0));
     Check(away.Points == 50 && away.Pending.Count == 0, "no evening, no judgement");
@@ -590,6 +927,12 @@ void VerifyBond()
     lonely.Save(path);
     var back = Affection.Load(path);
     Check(back.Points == 95 && back.Pending.SequenceEqual(lonely.Pending) && back.LastActive == lonely.LastActive, "kept in affection.json");
+    lonely.SetPoints(Affection.Min, day);
+    lonely.Apply("挨打", day);
+    lonely.Save(path);
+    var lowest = Affection.Load(path);
+    Check(lowest.Points == Affection.Min && lowest.Level == 0 && lowest.LevelFrom == Affection.Min &&
+        lowest.NextAt == 0, "the negative floor survives a reload and points back to 初识");
     File.Delete(path);
     Check(Affection.Load(path).Points == 0, "no file, a fresh start");
 
@@ -600,18 +943,40 @@ void VerifyBond()
     Check(close.Matches(lateNight, 3) && !close.Matches(lateNight, 2) && !close.Matches(lateNight.AddHours(-10), 5), "亲密 and the time both have to fit");
     Check(Condition.Parse("亲密6", out var bad) == null && bad == "亲密6", "only 亲密1 to 亲密5");
 
-    // 满档戳裙子是“娇羞”，专注时只做安静的小动作
+    // 最高好感时，连续戳胸才出现爱心眼。
     var sent = new List<string>();
-    bool smitten = false;
-    var pet = new Behavior(sent.Add, () => [], new Random(3)) { Smitten = () => smitten };
+    var pet = new Behavior(sent.Add, () => [], new Random(3));
     var now = DateTime.UtcNow;
-    pet.Click("skirt", now);
-    Check(pet.Showing == "护裙", "skirt poked: 护裙");
-    smitten = true;
-    var shown = new Dictionary<string, int>();
-    for (int i = 0; i < 900; i++) { pet.Click("skirt", now.AddSeconds(5 + i * 10)); shown[pet.Showing!] = shown.GetValueOrDefault(pet.Showing!) + 1; }
-    Check(shown.Keys.Order().SequenceEqual(Behavior.SmittenMoods.Order()) && shown.Values.All(count => count is > 240 and < 360), "at the top level: three shy reactions, a third each");
-    Check(sent.Contains("exp 爱心眼 1") && sent.Contains("exp 脸红 1") && sent.Contains("motion 默认手切举手"), "heart eyes, blushing, hand to her chest");
+    int highest = Affection.Levels.Length;
+    pet.Click("chest", now, level: highest);
+    Check(pet.Showing == "娇羞前倾" && !sent.Contains("exp 爱心眼 1"), "the first chest poke only blushes");
+    pet.Click("chest", now.AddSeconds(1), level: highest);
+    Check(pet.Showing == "娇羞抚胸" && !sent.Contains("exp 爱心眼 1"), "the second chest poke still has ordinary eyes");
+    pet.Click("chest", now.AddSeconds(2), level: highest);
+    Check(pet.Showing == "娇羞" && sent.Contains("exp 爱心眼 1"), "the third chest poke turns on heart eyes");
+    pet.Click("chest", now.AddSeconds(7), level: highest);
+    Check(pet.Showing == "娇羞前倾" && sent.Contains("exp 爱心眼 0"), "a pause starts a new chest-poke sequence");
+    pet.Click("skirt", now.AddSeconds(8), level: highest);
+    Check(pet.Showing == "护裙", "the skirt keeps its own response at the highest level");
+    pet.Click("chest", now.AddSeconds(9), level: highest);
+    Check(pet.Showing == "娇羞前倾", "another touch breaks the chest-poke sequence");
+    pet.Click("chest", now.AddSeconds(10), level: highest - 1);
+    Check(pet.Showing == "点胸口·害羞", "a lower affection level has its own response");
+    pet.Click("chest", now.AddSeconds(11), level: highest);
+    Check(pet.Showing == "娇羞前倾", "changing affection stages resets the count");
+    pet.Interrupt();
+    pet.Click("chest", now.AddSeconds(12), level: highest);
+    Check(pet.Showing == "娇羞前倾", "an interrupted reaction does not carry a chest poke forward");
+    var rapid = new Behavior(_ => { }, () => [], new Random(3));
+    var burst = Enumerable.Range(0, 5).Select(i => rapid.ClickReaction("chest", now.AddMilliseconds(300 * i), highest));
+    Check(burst.SequenceEqual(["娇羞前倾", "娇羞抚胸", "娇羞", "娇羞", "挨打"]),
+        "heart eyes hold across the fourth click, and the fifth rapid click still gets the basin");
+    foreach (int level in Enumerable.Range(0, highest))
+    {
+        var lower = new Behavior(_ => { }, () => [], new Random(3));
+        Check(Enumerable.Range(0, 3).All(i => lower.ClickReaction("chest", now.AddSeconds(i), level) != "娇羞"),
+            "heart eyes cannot be reached by a chest sequence at stage " + level);
+    }
     Check(Behavior.Moods["娇羞前倾"].Motion!.Any(track => track.Id == "LeanInput" && track.Keys.Contains("-14")) && Behavior.Moods["娇羞抚胸"].Motion!.Any(track => track.Id == "LeanInput" && track.Keys.Contains("-21")), "one leans in, one leans in a lot");
     Check(Behavior.Moods["娇羞抚胸"].Parameters.Contains(("EyeOpen", .45)) && Behavior.Moods["娇羞抚胸"].Parameters.Contains(("EyeSmile", 1)), "leaning in a lot, with smiling eyes");
     var quiet = new List<string>(); var said = new List<string>(); var plays = new List<string>();
@@ -619,6 +984,14 @@ void VerifyBond()
     var t = new DateTime(2026, 11, 8, 2, 0, 30, DateTimeKind.Local).ToUniversalTime();
     for (int i = 0; i < 200; i++) still.Tick(t.AddSeconds(i * 20), false, 15);
     Check(quiet.Count > 20 && quiet.All(name => name is "思考" or "发呆" or "歪头") && said.Count == 0 && plays.Count == 0, "focusing: only quiet moves, no talk, no skits, no chimes");
+
+    var passive = new Behavior(_ => { }, () => [], new Random(5))
+    { IdleStarted = quiet.Add, TextIdle = said.Add, SkitIdle = plays.Add, ChimeTexts = _ => ["报时"] };
+    quiet.Clear();
+    passive.Resume(t, 15);
+    for (int i = 0; i < 100; i++) passive.Tick(t.AddSeconds(i * 20), false, 15, allowIdle: false);
+    Check(quiet.Count == 0 && said.Count == 0 && plays.Count == 0 && passive.Showing == null,
+        "low affection skips automatic motions, dialogue, skits and chimes");
 
     // 番茄钟
     var timer = new FocusTimer();
@@ -629,8 +1002,42 @@ void VerifyBond()
     Check(timer.Tick(start.AddMinutes(24)) == FocusTimer.Turn.None, "not yet");
     Check(timer.Tick(start.AddMinutes(25)) == FocusTimer.Turn.WorkDone && timer.Now == FocusTimer.Phase.Break && timer.RoundsToday == 1, "work done, a break");
     Check(timer.Tick(start.AddMinutes(30)) == FocusTimer.Turn.BreakDone && timer.Now == FocusTimer.Phase.None, "break done, waits for the next start");
+    timer.Start(start, minutes: 12);
+    Check(timer.Length.TotalMinutes == 12 && timer.Tick(start.AddMinutes(11)) == FocusTimer.Turn.None
+        && timer.Tick(start.AddMinutes(12)) == FocusTimer.Turn.WorkDone && timer.Length.TotalMinutes == 5,
+        "custom work duration reaches the normal break without changing the rest duration");
     timer.Start(start); timer.Stop();
     Check(timer.Now == FocusTimer.Phase.None && timer.Tick(start.AddHours(1)) == FocusTimer.Turn.None, "stopped early");
+    timer.StartStopwatch(start);
+    var fortyMinutes = start.AddMinutes(40);
+    Check(timer.Left(fortyMinutes) == TimeSpan.Zero && timer.Elapsed(fortyMinutes) == TimeSpan.FromMinutes(40)
+        && timer.Tick(fortyMinutes) == FocusTimer.Turn.None && timer.Now == FocusTimer.Phase.Work, "stopwatch counts up without a deadline");
+    timer.Stop(fortyMinutes);
+    Check(timer.Elapsed(start.AddHours(1)) == TimeSpan.FromMinutes(40), "stopped stopwatch holds its result");
+
+    var zone = TimeZoneInfo.CreateCustomTimeZone("Fixed UTC+8", TimeSpan.FromHours(8), "UTC+8", "UTC+8");
+    var beforeMidnight = new DateTime(2026, 11, 20, 15, 58, 0, DateTimeKind.Utc);
+    var midnight = FocusTimer.NextTime(beforeMidnight, new TimeOnly(0, 1), zone);
+    Check(midnight == beforeMidnight.AddMinutes(3), "target time crosses local midnight");
+    Check(FocusTimer.NextTime(beforeMidnight, new TimeOnly(23, 57), zone) == beforeMidnight.AddMinutes(1439), "past clock time rolls to next day");
+    timer.StartAt(beforeMidnight, midnight, alarm: false);
+    Check(timer.Now == FocusTimer.Phase.Work && timer.Tick(midnight.AddSeconds(-1)) == FocusTimer.Turn.None
+        && timer.Tick(midnight) == FocusTimer.Turn.DeadlineDone && timer.Now == FocusTimer.Phase.None, "scheduled focus ends at its time");
+    timer.StartAt(beforeMidnight, midnight, alarm: true);
+    Check(timer.Now == FocusTimer.Phase.Alarm && timer.Tick(midnight) == FocusTimer.Turn.AlarmDone
+        && timer.Tick(midnight.AddSeconds(1)) == FocusTimer.Turn.None, "alarm rings once without entering focus");
+    Check(timer.RoundsToday == 2, "only completed countdowns count as focus rounds");
+
+    var transitionTime = new DateTime(1, 1, 1, 2, 0, 0);
+    var summer = TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(new DateTime(2026, 1, 1), new DateTime(2026, 12, 31),
+        TimeSpan.FromHours(1), TimeZoneInfo.TransitionTime.CreateFixedDateRule(transitionTime, 3, 8),
+        TimeZoneInfo.TransitionTime.CreateFixedDateRule(transitionTime, 11, 1));
+    var seasonal = TimeZoneInfo.CreateCustomTimeZone("Seasonal Time", TimeSpan.FromHours(-5), "Seasonal Time",
+        "Standard Time", "Summer Time", [summer]);
+    var beforeOverlap = new DateTime(2026, 11, 1, 4, 50, 0, DateTimeKind.Utc);
+    Check(FocusTimer.NextTime(beforeOverlap, new TimeOnly(1, 30), seasonal) == beforeOverlap.AddMinutes(40)
+        && FocusTimer.NextTime(beforeOverlap.AddHours(1), new TimeOnly(1, 30), seasonal) == beforeOverlap.AddMinutes(100),
+        "scheduled clock uses the next real occurrence during a repeated local hour");
 
     // 连续工作 2 小时
     var work = new WorkStreak();
@@ -649,7 +1056,7 @@ void VerifyBond()
     var wave = ChimeSound.Wave([880, 1318.5]);
     Check(wave.Length > 44 + 44100 && System.Text.Encoding.ASCII.GetString(wave, 0, 4) == "RIFF" && System.Text.Encoding.ASCII.GetString(wave, 8, 4) == "WAVE", "the chime is a wav");
 
-    // 数据文件：新事件都在，touch.txt 的等级读得懂，满档戳裙子有台词，亲密小剧场都是彩蛋
+    // 数据文件：新事件都在，touch.txt 的等级读得懂，戳胸有台词，亲密小剧场都是彩蛋
     var root = AppContext.BaseDirectory;
     while (root != null && !File.Exists(Path.Combine(root, "events.txt"))) root = Path.GetDirectoryName(root);
     var book = EventBook.Parse(File.ReadAllLines(Path.Combine(root!, "events.txt")));
@@ -657,7 +1064,7 @@ void VerifyBond()
         Check(book.TryGetValue(name, out var def) && def.Lines.Length > 0 && def.Lines.All(line => line.Cue != null), "events.txt has a readable " + name);
     var touches = File.ReadAllLines(Path.Combine(root!, "touch.txt")).Where(line => !line.TrimStart().StartsWith("//") && line.Contains('|')).ToArray();
     Check(touches.Where(line => line.Split('|').Length == 3).All(line => Condition.Parse(line.Split('|')[2], out _) is { MinLevel: > 0 }), "touch.txt levels are read");
-    Check(touches.Count(line => line.StartsWith("娇羞|")) >= 4, "the top level has its own skirt lines");
+    Check(touches.Count(line => line.StartsWith("娇羞|")) >= 4, "the highest level has its own chest-poke lines");
     var skitLines = File.ReadAllLines(Path.Combine(root!, "skits.txt"));
     var loveSkits = skitLines.Select((line, i) => (line, i)).Where(item => item.line.StartsWith('#') && item.line.Contains("@亲密")).ToArray();
     Check(loveSkits.Length >= 8 && loveSkits.All(item => skitLines[item.i + 1].TrimStart('/').Trim().StartsWith("彩蛋")), "closeness skits are hidden eggs");

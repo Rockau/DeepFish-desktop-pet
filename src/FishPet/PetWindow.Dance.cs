@@ -198,7 +198,7 @@ internal sealed partial class PetWindow
         if (standby) return "收起待命";
         if (hiding) return "正在收起";
         if (hiddenForFullscreen) return "全屏让位";
-        if (stroking) return "被摸";
+        if (stroking || rightDragging || extraEffectsActive) return "被摸";
         if (dragging) return "被拖";
         if (dizzyOn) return "头晕";
         if (body.Posing) return "摆姿势";

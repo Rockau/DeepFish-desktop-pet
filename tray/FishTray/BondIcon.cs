@@ -79,7 +79,7 @@ internal static class BondIcon
 
     public static FrameworkElement Build(int level)
     {
-        level = System.Math.Clamp(level, 1, 5);
+        level = System.Math.Clamp(level, 0, 5);
         var root = new Canvas { Width = 400, Height = 400, RenderTransform = new TranslateTransform(-50, -36), IsHitTestVisible = false };
         if (level == 5)
         {
@@ -92,6 +92,7 @@ internal static class BondIcon
         if (level >= 3) root.Children.Add(Ripple(268, 96, 18, 6.5, 0.5));
         switch (level)
         {
+            case 0: root.Children.Add(Line(Tail1, Brush("#AF819D"), StrokeW, PenLineCap.Flat)); break;
             case 1: root.Children.Add(Line(Tail1, Brush("#7CC4FF"), StrokeW, PenLineCap.Flat)); break;
             case 2: root.Children.Add(Tail(null, "#7CC4FF")); break;
             case 3: root.Children.Add(Tail(Gradient("#7CC4FF", 0.34, "#7CC4FF", 0.10, new Point(0, 1)), "#8FD0FF")); break;

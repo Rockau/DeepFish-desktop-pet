@@ -27,6 +27,11 @@ The original project is used and modified with the author's permission.
 - **NAudio** 1.10.0（`audio/NAudio.dll`，随包分发），Copyright © Mark Heath & Contributors，MIT：https://github.com/naudio/NAudio
 - **dsh-whale-pulse**（"鱼的耳机"）的音频采集器，`audio/probe.ps1` 改自它的 `runtime/probe.ps1`，MIT：https://github.com/XiaTian-606/dsh-whale-pulse ；改动见 `audio/README.md`
 
+## 可选语音集成 / Optional voice integration
+
+- 语音扩展参考 [冰镐人（ICEAXEMAN）的 DeepFish-voice](https://github.com/ICEAXEMAN/DeepFish-voice)。
+- 藤田琴音配音集成的测试语音包来自 [Bilibili BV1odxs6wE5H](https://www.bilibili.com/video/BV1odxs6wE5H/)。请按原发布者说明获取。
+
 ## 重要说明 / Important
 
 - 本仓库**不包含** Live2D 模型文件。模型的使用规则以神宫凉子的《使用须知》为准；请到原作者发布页获取，不要二次分发模型文件。
