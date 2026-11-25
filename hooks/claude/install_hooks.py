@@ -21,9 +21,11 @@ MARK = "fish_hook.py"
 # (事件, matcher)。进度简报要读任务清单，所以 PostToolUse 有两条。
 EVENTS = [
     ("Notification", None),
+    ("PermissionRequest", None),
     ("Stop", None),
     ("SubagentStop", None),
     ("PreToolUse", "Bash"),
+    ("PreToolUse", "AskUserQuestion"),
     ("PostToolUse", "Bash"),
     ("PostToolUse", "TodoWrite|mcp__ccd_turn__update_plan|mcp__ccd_turn__wrap_up"),
     ("PostToolUseFailure", None),
