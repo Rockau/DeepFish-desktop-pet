@@ -90,8 +90,7 @@ internal sealed partial class PetWindow : Window
     private int returnStage;
     private DateTime returnAt;
     private const double HeadReturnDelay = .5, HeadReturnRate = 1.6, EyeReturnRate = 5;
-    private Rect open;
-
+    private bool underBar; // 她的窗口正放在任务栏正下方、站在任务栏后面（UpdateCut）
     // Her lines: one at a time, in order; a line of nothing but 〔〕 plays with no bubble.
     private Task lines = Task.CompletedTask;
     private Line? silent;
@@ -252,7 +251,7 @@ internal sealed partial class PetWindow : Window
         body.Forget(); silent = null; relaxAt = null;
         behavior.Resume(DateTime.UtcNow, settings.IdleSeconds);
         timer.Start();
-        open = default;
+        underBar = false; // 新渲染器：先当她在最上面，UpdateCut 再按需放回任务栏后面
         UpdateCut();
     }
 
@@ -321,7 +320,7 @@ internal sealed partial class PetWindow : Window
     {
         if (test) { Left = -6000; Top = 100; return; }
         var area = SystemParameters.WorkArea;
-        Left = settings.Left ?? area.Right - Width - 8;
+        Left = settings.Left ?? area.Right - Width + 80; // 默认站位：比贴边再往右 80（身子右边会伸出屏外一点，脸仍在屏内，Clamp 兜底）
         Top = settings.Top ?? area.Bottom - Height * .5;
         Clamp();
     }
@@ -818,8 +817,7 @@ internal sealed partial class PetWindow : Window
         image.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(fadeInMs)));
     }
 
-    // A topmost window draws over the taskbar: whatever of her reaches it is not drawn, and clicks there
-    // pass through, so she stands behind it.
+    // 她和任务栏谁在上面：碰到任务栏时（任务栏遮挡开着）她的窗口放在任务栏正下方，就站在任务栏后面。
     private void UpdateCut()
     {
         if (!IsVisible || test) return;
@@ -830,11 +828,16 @@ internal sealed partial class PetWindow : Window
         double right = work.Right < monitor.Right ? Math.Clamp(work.Right - window.Left, left, window.Width) : window.Width;
         double bottom = work.Bottom < monitor.Bottom ? Math.Clamp(work.Bottom - window.Top, top, window.Height) : window.Height;
         var uncovered = new Rect(left, top, right - left, bottom - top);
-        // 本机改（2026-11-12）：按住左键拖动时不挡，全身盖过任务栏好看全貌；放手后再躲回任务栏后面。
-        if (dragging && dragged) uncovered = new Rect(0, 0, Width, Height);
-        if (uncovered == open) return;
-        open = uncovered;
-        image.Clip = uncovered == new Rect(0, 0, Width, Height) ? null : new RectangleGeometry(uncovered);
+        // 任务栏遮挡开着、她碰到了任务栏：不裁剪，把她的窗口放到任务栏的正下方，由系统的任务栏毛玻璃盖在她上面，
+        // 看起来就是站在任务栏后面；点任务栏那一截，点到的也是任务栏（2026-11-25 用户要的，取代原来的裁剪）。
+        // 任务栏遮挡关着，或者没碰到任务栏：她在最上面（关着时由 KeepTaskbarOrder 守着）。
+        bool under = settings.TaskbarCover && uncovered != new Rect(0, 0, Width, Height);
+        if (image.Clip != null) image.Clip = null;
+        if (under == underBar) return;
+        underBar = under;
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == 0) return;
+        if (under) PutBelowTaskbar(handle); else RaiseAboveAll(handle);
     }
 
     // Her body takes a moment to change while the window changes at once: she goes out, changes unseen, and comes back.
@@ -866,6 +869,7 @@ internal sealed partial class PetWindow : Window
         }
         if (hiddenForFullscreen) return;
         KeepTopmost();
+        KeepTaskbarOrder();
         // Moving the window pushes her body; physics carries that into her hair, skirt and tail.
         // 拖动时按抓点压低这个整体平移：抓点那一头才贴在手上（用户 2026-11-12）
         double swayScale = dragging ? GrabbedSway : 1;
@@ -1008,10 +1012,10 @@ internal sealed partial class PetWindow : Window
         {
             // 置顶标记还在，但置顶层里也分先后：别的“总在最前”的程序被点到，就会盖在她上面（本机加，2026-11-13）。
             if (DateTime.UtcNow < nextCoverRaise) return;
-            var cover = CoveredBy(handle);
+            var cover = CoveredBy(handle, !settings.TaskbarCover);
             if (cover == null) return;
             nextCoverRaise = DateTime.UtcNow.AddSeconds(3); // 对方要是也爱抢最前，别跟它抢得太勤
-            RaiseAboveAll(handle);
+            Lift(handle);
             if (DateTime.UtcNow - topmostLostLogged > TimeSpan.FromMinutes(1))
             {
                 topmostLostLogged = DateTime.UtcNow;
@@ -1019,7 +1023,7 @@ internal sealed partial class PetWindow : Window
             }
             return;
         }
-        RaiseAboveAll(handle);
+        Lift(handle);
         if (DateTime.UtcNow - topmostLostLogged > TimeSpan.FromMinutes(1))
         {
             topmostLostLogged = DateTime.UtcNow;
@@ -1029,14 +1033,42 @@ internal sealed partial class PetWindow : Window
 
     private DateTime nextCoverRaise;
 
+    // 她和任务栏的先后，每 80 毫秒看一眼（点任务栏、悬停缩略图、别的程序都会让任务栏或她换位置；一秒一次的 KeepTopmost 太慢）：
+    // 任务栏遮挡关着：任务栏压到她上面就把她抬回去；开着、她又碰到任务栏：任务栏不在她上面就把她放回任务栏下面。
+    // 不受“全屏时藏起来”影响：她藏着（全屏）的时候 Tick 在这之前就 return 了。
+    private DateTime nextBarLook;
+    private void KeepTaskbarOrder()
+    {
+        if (test || standby || !IsVisible || exiting) return;
+        if (settings.TaskbarCover && !underBar) return;
+        if (DateTime.UtcNow < nextBarLook) return;
+        nextBarLook = DateTime.UtcNow.AddMilliseconds(80);
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == 0 || ((long)GetWindowLongPtr(handle, -20) & 0x8) == 0) return; // 没有置顶标记的交给 KeepTopmost 补
+        bool barAbove = false;
+        var above = handle;
+        for (int step = 0; step < 300 && (above = GetWindow(above, 3)) != 0; step++)
+            if (IsTaskbar(above) && IsWindowVisible(above)) { barAbove = true; break; }
+        if (!settings.TaskbarCover && barAbove) RaiseAboveAll(handle);
+        else if (settings.TaskbarCover && !barAbove) PutBelowTaskbar(handle);
+    }
+
+    // 把她抬到置顶层最前面；她正站在任务栏后面的话，再放回任务栏正下方。
+    private void Lift(nint handle)
+    {
+        RaiseAboveAll(handle);
+        if (underBar) PutBelowTaskbar(handle);
+    }
+
     // 置顶层里压在她上面、又和她的窗口重叠的，是哪个程序（没有就返回 null）。
     // 她自己的气泡和手、任务栏/开始菜单这些系统外壳、被隐藏（cloaked）的和最小化的不算。
     private static readonly HashSet<string> ShellProcesses = new(StringComparer.OrdinalIgnoreCase)
     {
         "explorer", "ShellExperienceHost", "StartMenuExperienceHost", "SearchHost", "SearchApp", "TextInputHost", "LockApp",
+        "FishTray", // 自家的托盘控制台：右键菜单、控制面板弹出来时，她不抢着盖上去（2026-11-25）
     };
 
-    private static string? CoveredBy(nint handle)
+    private static string? CoveredBy(nint handle, bool taskbarCounts = false)
     {
         if (!GetWindowRect(handle, out var mine)) return null;
         uint self = (uint)Environment.ProcessId;
@@ -1048,6 +1080,7 @@ internal sealed partial class PetWindow : Window
             int width = Math.Min(mine.Right, other.Right) - Math.Max(mine.Left, other.Left);
             int height = Math.Min(mine.Bottom, other.Bottom) - Math.Max(mine.Top, other.Top);
             if (width < 24 || height < 24) continue;
+            if (taskbarCounts && IsTaskbar(above)) return "任务栏"; // 任务栏遮挡关着：任务栏压在她上面也要抬回来
             // 只管“正经的程序窗口”：不进任务栏的浮层（截图框、录制条、各种弹出面板）和铺满整屏的浮层，她不去盖，也不抢着压过去
             if (Fullscreen.IsToolWindow(above) || Fullscreen.FillsMonitor(above)) continue;
             if (DwmGetWindowAttribute(above, 14, out int cloaked, sizeof(int)) == 0 && cloaked != 0) continue; // DWMWA_CLOAKED
@@ -1081,8 +1114,36 @@ internal sealed partial class PetWindow : Window
         var handle = new WindowInteropHelper(this).Handle;
         // 本机改（2026-11-13）：只有被“正经的程序窗口”压着才抬。托盘的隐藏图标面板、开始菜单、截图录屏的浮层
         // 都不算——点她一下就盖到它们上面，会把用户正在用的面板挡住。
-        if (handle != 0 && CoveredBy(handle) != null) RaiseAboveAll(handle);
+        if (handle != 0 && CoveredBy(handle, !settings.TaskbarCover) != null) Lift(handle);
     }
+
+    // 把她的窗口放到任务栏的正下方（仍在置顶层里、压着别的普通窗口）：挑和她重叠最多的那条任务栏（多屏有好几条）。
+    private void PutBelowTaskbar(nint handle)
+    {
+        if (!GetWindowRect(handle, out var mine)) return;
+        nint best = 0; long bestArea = 0;
+        // 从最上面往下数一遍所有窗口找任务栏（她可能已经在任务栏上面，所以不能只看她上面的）
+        for (var window = GetTop(); window != 0; window = GetWindow(window, 2)) // GW_HWNDNEXT
+        {
+            if (!IsTaskbar(window) || !IsWindowVisible(window) || !GetWindowRect(window, out var bar)) continue;
+            long w = Math.Min(mine.Right, bar.Right) - Math.Max(mine.Left, bar.Left), h = Math.Min(mine.Bottom, bar.Bottom) - Math.Max(mine.Top, bar.Top);
+            if (w > 0 && h > 0 && w * h > bestArea) { best = window; bestArea = w * h; }
+        }
+        if (best != 0) SetWindowPos(handle, best, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate | SwpNoOwnerZOrder);
+    }
+
+    private static nint GetTop() => GetTopWindow(0);
+    [DllImport("user32.dll")] private static extern nint GetTopWindow(nint hwnd);
+
+    private static bool IsTaskbar(nint window)
+    {
+        var name = new System.Text.StringBuilder(32);
+        GetClassName(window, name, name.Capacity);
+        var text = name.ToString();
+        return text == "Shell_TrayWnd" || text == "Shell_SecondaryTrayWnd";
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(nint hwnd, System.Text.StringBuilder text, int count);
 
     private static void RaiseAboveAll(nint handle) =>
         SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate | SwpNoOwnerZOrder);
@@ -1508,6 +1569,12 @@ internal sealed partial class PetWindow : Window
                 {
                     settings.HideOnFullscreen = hide.GetBoolean(); nextFullscreenLook = default;
                 }
+                if (args.TryGetProperty("taskbar_cover", out var barCover) && barCover.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    settings.TaskbarCover = barCover.GetBoolean();
+                    nextTopmostLook = default; nextBarLook = default;
+                    UpdateCut(); // 马上换到任务栏后面（或前面）
+                }
                 if (args.TryGetProperty("check_updates", out var check) && check.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.CheckUpdates = check.GetBoolean();
                 if (args.TryGetProperty("follow_mouse", out var follow) && follow.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.FollowMouse = follow.GetBoolean();
                 if (args.TryGetProperty("start_hidden", out var startHidden) && startHidden.ValueKind is JsonValueKind.True or JsonValueKind.False) settings.StartHidden = startHidden.GetBoolean();
@@ -1736,7 +1803,7 @@ internal sealed partial class PetWindow : Window
     private object State() => new
     {
         shape = settings.Shape, shapeLabel = Shape.Label, wearing = Wearing(), fps = settings.Fps, scale = settings.Scale, tex_scale = settings.TexScale, bubble_scale = settings.BubbleScale, bubble_seconds = settings.BubbleSeconds,
-        hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, start_hidden = settings.StartHidden, keep_on_screen = settings.KeepOnScreen, follow_mouse = settings.FollowMouse,
+        hide_on_fullscreen = settings.HideOnFullscreen, hidden_for_fullscreen = hiddenForFullscreen && !standby, hidden = standby, start_hidden = settings.StartHidden, keep_on_screen = settings.KeepOnScreen, follow_mouse = settings.FollowMouse, taskbar_cover = settings.TaskbarCover,
         check_updates = settings.CheckUpdates, music_dance = settings.MusicDance, dance_music_apps = settings.DanceMusicApps, dance_browser = settings.DanceBrowser, dance_strength = settings.DanceStrength, coax_sleep = settings.CoaxSleep, coax_lunch = settings.CoaxLunch, sleep_at = settings.SleepAt, lunch_at = settings.LunchAt, birthday = settings.Birthday,
         update = updates.Latest is { } found ? new { current = found.Current, latest = found.Latest, behind = found.Behind, changes = found.Changes, guide = found.Guide } : null,
         idle_seconds = settings.IdleSeconds, position = new { Left, Top }, saying = speech.IsSaying, reaction = behavior.Showing, trouble,

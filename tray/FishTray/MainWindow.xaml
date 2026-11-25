@@ -272,6 +272,10 @@
                                     <ToggleButton x:Name="SwFollow" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                                 </Grid>
                                 <Grid Margin="0,8">
+                                    <TextBlock Text="任务栏遮挡" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="SwTaskbarCover" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,8">
                                     <TextBlock Text="别的程序全屏时藏起来" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="SwFull" Style="{StaticResource Switch}" HorizontalAlignment="Right"/>
                                 </Grid>

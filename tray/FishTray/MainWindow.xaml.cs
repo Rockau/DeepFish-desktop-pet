@@ -116,7 +116,7 @@ public partial class MainWindow : Window
         SetupSlider(BubbleSlider, BubbleMarks, BubbleValue, v => $"{v:0.0}×", (0.5, "0.5×"), (1, "1.0×"), (1.5, "1.5×"), (2, "2.0×"));
         SetupSlider(IdleSlider, IdleMarks, IdleValue, v => SecondsText(IdleStops[(int)Math.Round(v)]),
             (0, "15秒"), (Array.IndexOf(IdleStops, 30), "30秒"), (Array.IndexOf(IdleStops, 60), "1分"), (Array.IndexOf(IdleStops, 120), "2分"), (Array.IndexOf(IdleStops, 300), "5分"), (IdleStops.Length - 1, "10分"));
-        Wire(SwFollow, "follow_mouse"); Wire(SwFull, "hide_on_fullscreen"); Wire(SwKeepOn, "keep_on_screen"); Wire(SwCoaxSleep, "coax_sleep"); Wire(SwCoaxLunch, "coax_lunch");
+        Wire(SwFollow, "follow_mouse"); Wire(SwTaskbarCover, "taskbar_cover"); Wire(SwFull, "hide_on_fullscreen"); Wire(SwKeepOn, "keep_on_screen"); Wire(SwCoaxSleep, "coax_sleep"); Wire(SwCoaxLunch, "coax_lunch");
         // 两个提醒的时间（2026-11-18）：滑块一档 15 分钟；睡觉从 22:00 数到 02:00，午饭从 11:00 数到 13:30
         SleepSlider.ValueChanged += (_, e) => { if (!loading) Queue("sleep_at", SleepText(e.NewValue)); };
         LunchSlider.ValueChanged += (_, e) => { if (!loading) Queue("lunch_at", LunchText(e.NewValue)); };
@@ -1027,7 +1027,7 @@ public partial class MainWindow : Window
             if (Fresh("dance_music_apps")) SwDanceApps.IsChecked = B("music_dance") && B("dance_music_apps");
             if (Fresh("dance_browser")) SwDanceBrowser.IsChecked = B("music_dance") && B("dance_browser");
             ShowDanceTags();
-            if (Fresh("follow_mouse")) SwFollow.IsChecked = B("follow_mouse");            if (Fresh("hide_on_fullscreen")) SwFull.IsChecked = B("hide_on_fullscreen");
+            if (Fresh("follow_mouse")) SwFollow.IsChecked = B("follow_mouse"); if (Fresh("taskbar_cover")) SwTaskbarCover.IsChecked = B("taskbar_cover");            if (Fresh("hide_on_fullscreen")) SwFull.IsChecked = B("hide_on_fullscreen");
             if (Fresh("start_hidden")) SwStartHidden.IsChecked = !B("start_hidden");
             if (Fresh("keep_on_screen")) SwKeepOn.IsChecked = B("keep_on_screen");
             if (Fresh("coax_sleep")) SwCoaxSleep.IsChecked = B("coax_sleep");
