@@ -24,6 +24,8 @@ internal sealed class Settings
     // Whether she looks on GitHub for a newer plugin when she starts and twice a day (Updates).
     public bool CheckUpdates { get; set; } = false;
     public bool FollowMouse { get; set; } = true;
+    // 任务栏遮挡：开 = 她在任务栏后面（默认）；关 = 她盖在任务栏上面。跟“全屏时藏起来”互不相干。
+    public bool TaskbarCover { get; set; } = true;
     // 小剧场演出期间暂时关掉视线跟随鼠标（演完自动恢复）；在 settings.json 里改，不进 update_settings。（本机加，2026-11-06）
     public bool SkitPausesFollow { get; set; } = true;
     // 只有这些音乐软件在出声才跟着跳（进程名，逗号分隔；2026-11-10 用户要的白名单）

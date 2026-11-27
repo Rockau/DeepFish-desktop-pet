@@ -17,6 +17,7 @@ const THINK_LOAD = 60 * 1000 // 收到消息 1 分钟后这一轮还没做完，
 const PUSH = /\bgit\s+push\b/i
 const BRIEF_GAP = 18 * 1000 // 进度简报：两次步骤简报至少隔这么久，没到点的攒着只说最新的（和 Claude 的 fish_hook.py 一样）
 const BEAT_AFTER = 60 * 1000 // 一条命令跑这么久还没完，报一次“仍在进行”
+const IDLE_WAIT = 90 * 1000 // 弹出授权框或选项后，老大 1 分 30 秒还没答复，演「等你」（用户 2026-11-25 定的；只在这两种弹窗之后计时）
 const THINK_TIMEOUT = 3 * 60 * 1000 // 收到消息 3 分钟后这一轮还没做完、用户也没再发新消息，算「思考超时」（用户 2026-11-14：30 秒改成 5 分钟又改成 3 分钟，并去掉“没有工具调用”这个条件）
 
 export function apply(ctx, config) {
@@ -184,6 +185,24 @@ export function apply(ctx, config) {
     for (const t of thinkTimers.get(id) || []) clearTimeout(t)
     thinkTimers.delete(id)
   }
+  // 等答复：弹出授权框/选项时开始计时，老大答复了（或这一轮结束、来了新消息、工具跑完）就取消
+  let waitTimer = null
+  function startWait(kind) {
+    clearTimeout(waitTimer)
+    void log(`等你计时开始（${kind}，${IDLE_WAIT / 1000} 秒）`)
+    waitTimer = setTimeout(() => { waitTimer = null; void sendEvent('等你') }, IDLE_WAIT)
+  }
+  function clearWait(why) {
+    if (!waitTimer) return
+    clearTimeout(waitTimer); waitTimer = null
+    void log(`等你计时取消（${why}）`)
+  }
+  // next() 是后面真正弹窗的那一环：它要等老大答复才结束的话，结束时就取消；马上就结束（不等答复）的话不算
+  function untilAnswered(result, kind) {
+    const t0 = Date.now()
+    Promise.resolve(result).finally(() => { if (Date.now() - t0 > 500) clearWait(kind + '已答复') }).catch(() => {})
+    return result
+  }
   function clearAllThink() { for (const id of [...thinkTimers.keys()]) clearThink(id) }
 
   // 根 agent：没有任何「父」字段。字段名在不同版本可能不一样，多认几个；认不出就当根（再靠间隔去重）。
@@ -203,12 +222,34 @@ export function apply(ctx, config) {
     return /abort|interrupt|cancel|user[-_ ]?stop|中断|取消/i.test(why)
   }
 
+  // 授权、提问（2026-11-17 修）：DSH 的 approval/request 和 user-questions/request 是在根 ctx 上派发的
+  // ——官方自己也是 ctx.on('approval/request', (request, next) => …) 收，payload 里带 request.agent。
+  // 以前只挂在 agent.ctx 上，实测弹出授权框时 hook.log 里一条都没有（日志里从来没有 sent 授权 / sent 等你）。
+  // 现在根和 agent 两处都挂，用一个时间戳去重，同一件事只演一遍。
+  let lastApproval = 0
+  let lastQuestion = 0
+  function watchApproval(c) {
+    return c.on('approval/request', (_req, next) => {
+      try { if (Date.now() - lastApproval > 3000) { lastApproval = Date.now(); void sendEvent('授权'); startWait('授权') } } catch {}
+      return untilAnswered(next(), '授权')
+    })
+  }
+  function watchQuestion(c) {
+    return c.on('user-questions/request', (_req, next) => {
+      try { if (Date.now() - lastQuestion > 3000) { lastQuestion = Date.now(); void sendEvent('选择'); startWait('选择') } } catch {}
+      return untilAnswered(next(), '选择')
+    })
+  }
+  const offApprovalRoot = watchApproval(ctx)
+  const offQuestionRoot = watchQuestion(ctx)
+
   function registerAgent(agent) {
     if (!agent?.ctx || typeof agent.ctx.on !== 'function' || disposers.has(agent.id)) return
     const actx = agent.ctx
     const dispose = actx.effect(() => {
-      actx.on('agent/error', () => { clearThink(agent.id); void sendEvent('出错') })
+      actx.on('agent/error', () => { clearThink(agent.id); clearWait('出错'); void sendEvent('出错') })
       actx.on('agent/inbox/inserted', () => {
+        clearWait('新消息')
         turnStart.set(agent.id, Date.now())
         briefOfAgent(agent.id).turnPlan = false
         void sendEvent('收到')
@@ -228,6 +269,7 @@ export function apply(ctx, config) {
         const started = turnStart.get(agent.id)
         turnStart.delete(agent.id)
         void log(`turn-stopping keys=${payload && typeof payload === 'object' ? Object.keys(payload).join(',') : typeof payload}`)
+        clearWait('这一轮结束')
         if (wasInterrupted(payload)) return void sendEvent('中断')
         const st = briefs.get(agent.id)
         if (st?.turnPlan && st.plan.length >= 2 && st.plan.every((p) => p.status === 'completed')) {
@@ -235,8 +277,8 @@ export function apply(ctx, config) {
         }
         void sendEvent(started && Date.now() - started > LONG_TASK ? '长任务完成' : '完成')
       })
-      actx.on('approval/request', (_req, next) => { void sendEvent('授权'); return next() })
-      actx.on('user-questions/request', (_req, next) => { void sendEvent('等你'); return next() })
+      watchApproval(actx)
+      watchQuestion(actx)
       // 压缩（用户 2026-11-16：和 Claude Code 的 /compact 对齐，台词在 events.txt 里共用）。
       // compaction/start 在整理前同步追加，compaction/summary 是摘要写完，compaction/end 收尾（失败也追加，带 error）。
       // 手动 /compact 带 sourceCommandId、turn 为 null；上下文满了自动压发生在轮次里。两个都算，和 Claude 的 PreCompact 一样分不出来。
@@ -246,6 +288,7 @@ export function apply(ctx, config) {
         const sid = session?.id
         if (sid && agent?.id && String(sid) !== String(agent.id)) return
         const data = event.data || {}
+        if (event.type === 'approval/decided') clearWait('授权已决定')
         // 进度简报第一步：任务清单（整份快照，content 是模型写的步骤名）
         if (event.type === 'todo/write') {
           const todos = Array.isArray(data.todos) ? data.todos : []
@@ -347,6 +390,7 @@ export function apply(ctx, config) {
 
   // 4. tools/result 挂在 root 上（Scoped<ToolsService>，和 subagent/end 一样不是 agent 级）：命令执行完。
   const offTools = ctx.on('tools/result', (exec, result) => {
+    clearWait('工具有结果了')
     try {
       const id = String(exec?.callId ?? '')
       const b = beats.get(id)
@@ -387,7 +431,10 @@ export function apply(ctx, config) {
     offSubagent?.()
     offPreRoot?.()
     offTools?.()
+    offApprovalRoot?.()
+    offQuestionRoot?.()
     clearAllThink()
+    clearWait('插件卸载')
     for (const b of beats.values()) clearTimeout(b.timer)
     for (const st of briefs.values()) if (st.timer) clearTimeout(st.timer)
     for (const d of disposers.values()) d?.()

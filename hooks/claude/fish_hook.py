@@ -124,9 +124,9 @@ def pick(data, session):
         text = str(data.get("message", "")).lower()
         if kind in ("permission_prompt", "elicitation_dialog") or "permission" in text:
             return "授权"
-        if kind == "auth_success":
-            return None
-        return "等你"
+        return None  # 「等你」只在授权/选项弹出后 90 秒没答复时由计时进程发（用户 2026-11-25 定的）
+    if event == "PermissionRequest":  # 要老大批准某个工具；选项那个工具单独发「选择」
+        return None if data.get("tool_name") == "AskUserQuestion" else "授权"
     if event == "Stop":
         started = session.get("start")
         return "长任务完成" if started and time.time() - started > LONG_TASK and not session.get("auto") else "完成"
@@ -469,6 +469,12 @@ def main():
     except Exception:
         data = {}
     event = data.get("hook_event_name", "")
+    if event == "PreToolUse" and data.get("tool_name") == "AskUserQuestion":
+        # 弹出选项等老大选（用户 2026-11-25 要的，台词和 DSH 共用 events.txt 的「选择」）
+        start_wait(data, "选择")
+        return send_event("选择", {"auto": False}, "PreToolUse", None, wait=1)
+    if event not in ("Notification", "PermissionRequest"):
+        clear_wait(str(data.get("session_id", "")))  # 别的事件来了 = 老大答复了、Claude 接着干活了
     if event in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
         tool = str(data.get("tool_name", ""))
         if tool == "Bash" or BRIEF_TOOLS.match(tool):
@@ -513,6 +519,8 @@ def main():
         arm_think(sid, session["start"], str(data.get("transcript_path", "")))
     if not name:
         return
+    if name == "授权" and not session.get("auto"):
+        start_wait(data, "授权")
     send_event(name, session, data.get("hook_event_name", ""))
 
 
@@ -585,10 +593,79 @@ def think_watch(sid, token, transcript, seconds=THINK_TIMEOUT, event="思考超�
     send_event(event, session, "思考计时")
 
 
+# ---- 等你：弹出授权框或选项后，老大 90 秒没答复才喊（用户 2026-11-25 定的） ----
+# 弹窗时在 sessions.json 里记一个 wait 记号，拉起后台进程；到点前这个会话来了别的 hook 事件就清掉记号（算答复了）。
+# 到点再看会话记录：选项那题已经有了结果，或者记录在等待期间又往下写了（老大答完 Claude 接着干活），也算答复了。
+IDLE_WAIT = 90  # 1 分 30 秒（用户 2026-11-25 从 60 秒改的）
+
+
+def start_wait(data, kind):
+    sid = str(data.get("session_id", ""))
+    if not sid or data.get("agent_id"):
+        return
+    token = repr(time.time())
+    with state_lock():
+        sessions = load_sessions()
+        sessions.setdefault(sid, {}).update(wait=token, seen=time.time())  # 没有 seen 的会被 load_sessions 当成过期丢掉
+        save_sessions(sessions)
+    spawn_quiet(["--wait", sid, token, str(data.get("transcript_path", "")), str(data.get("tool_use_id", ""))])
+    log(f"等你计时开始（{kind}，{IDLE_WAIT} 秒）")
+
+
+def clear_wait(sid):
+    if not sid:
+        return
+    with state_lock():
+        sessions = load_sessions()
+        if sessions.get(sid, {}).pop("wait", None) is not None:
+            save_sessions(sessions)
+            log("等你计时取消（老大答复了）")
+
+
+def transcript_size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return -1
+
+
+def answered_in_transcript(path, call):
+    # 选项那题的 tool_use_id 在会话记录里有了 tool_result，就是答完了
+    if not call:
+        return False
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, os.path.getsize(path) - 400000))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        return False
+    return f'"tool_use_id":"{call}"' in tail.replace(" ", "")
+
+
+def wait_watch(sid, token, transcript, call):
+    time.sleep(3)  # 先让弹窗前那条消息写进会话记录
+    size = transcript_size(transcript)
+    time.sleep(IDLE_WAIT - 3)
+    session = load_sessions().get(sid, {})
+    if session.get("wait") != token:
+        return  # 已经答复了（或者又弹了新的一个，由新的计时管）
+    if answered_in_transcript(transcript, call) or (size >= 0 and transcript_size(transcript) > size):
+        log("等你计时：会话记录往下走了，算答复了，不喊")
+        return
+    with state_lock():
+        sessions = load_sessions()
+        if sessions.get(sid, {}).get("wait") == token:
+            sessions[sid].pop("wait", None)
+            save_sessions(sessions)
+    send_event("等你", session, "等你计时")
+
+
 if __name__ == "__main__":
     try:
         if sys.argv[1:2] == ["--brief-flush"] and len(sys.argv) >= 5:
             brief_flush(sys.argv[2], sys.argv[3], float(sys.argv[4]))
+        elif sys.argv[1:2] == ["--wait"] and len(sys.argv) >= 6:
+            wait_watch(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
         elif sys.argv[1:2] == ["--beat"] and len(sys.argv) >= 4:
             beat_watch(sys.argv[2], sys.argv[3])
         elif sys.argv[1:2] == ["--think"] and len(sys.argv) >= 5:
