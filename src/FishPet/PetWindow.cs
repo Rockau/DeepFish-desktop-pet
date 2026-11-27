@@ -156,6 +156,7 @@ internal sealed partial class PetWindow : Window
             // 本机修（2026-11-06）：Windows 默认不让窗口比屏幕大太多（最大跟踪尺寸≈屏幕+边框）。全身体型放到 2 倍时窗口比屏幕还高，
             // 高度被系统压矮约 20%，而画面还是按原高度渲染、被硬塞进矮窗口里，人就显得横向被拉扁。这里把上限放开。
             HwndSource.FromHwnd(handle)?.AddHook(NoWindowSizeLimit);
+            HwndSource.FromHwnd(handle)?.AddHook(StayUnderBar);
         };
         Loaded += (_, _) =>
         {
@@ -1145,8 +1146,34 @@ internal sealed partial class PetWindow : Window
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(nint hwnd, System.Text.StringBuilder text, int count);
 
-    private static void RaiseAboveAll(nint handle) =>
-        SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate | SwpNoOwnerZOrder);
+    private static bool ownRaise;
+    private static void RaiseAboveAll(nint handle)
+    {
+        ownRaise = true;
+        try { SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate | SwpNoOwnerZOrder); }
+        finally { ownRaise = false; }
+    }
+
+    // 每次启动后第一次点她，她会冒到任务栏上面一下（几十到一百来毫秒，像闪一下），之后再点就没有（2026-11-27）。
+    // 点下去时系统把她的窗口提到了置顶层最前面（这条换先后直接从消息循环来；叫出来时 Window.Show 也会发一条），
+    // 要等 KeepTaskbarOrder 发现了再放回去；第一次点时界面线程还在做首次初始化，放回去得晚，就看得见。
+    // 这里在窗口要换先后的那一刻拦住：她正站在任务栏后面、已经置顶时，不是她自己要抬（RaiseAboveAll）的
+    // “提到最前”一律不换先后，位置大小照常。
+    private nint StayUnderBar(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (message != 0x0046 || ownRaise || !underBar || !settings.TaskbarCover || dragging && dragged) return 0; // WM_WINDOWPOSCHANGING
+        var pos = Marshal.PtrToStructure<WindowPos>(lParam);
+        if ((pos.Flags & SwpNoZOrder) != 0 || ((long)GetWindowLongPtr(hwnd, -20) & 0x8) == 0) return 0; // 还没置顶（要重新置顶）的放行
+        if (pos.After != 0 && pos.After != HwndTopmost) return 0; // 只拦 HWND_TOP / HWND_TOPMOST（放到任务栏下面那种照常）
+        pos.Flags |= SwpNoZOrder;
+        Marshal.StructureToPtr(pos, lParam, false);
+        if (zGuardLogged++ < 3) Places.Log("拦下一次把她提到任务栏上面的换先后（after=" + pos.After + "，她留在任务栏后面）");
+        return 0;
+    }
+    private static int zGuardLogged;
+    private const uint SwpNoZOrder = 0x0004;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowPos { public nint Hwnd, After; public int X, Y, Cx, Cy; public uint Flags; }
 
     // ---- The user's hands on her ----
 
