@@ -152,7 +152,7 @@ internal sealed partial class PetWindow
         var at = e.GetPosition(this);
         if (!OnHead(at, out _)) return; // 只有摸头：别的地方右键不算
         e.Handled = true;
-        RaiseAboveAll();
+        RaiseIfCovered();
         stroking = true;
         strokeTravel = strokeMoving = strokeMaxTime = strokeHeadTime = 0;
         strokeDeepTime = 0; melted = false; melted30 = false; afterStrokeMelt = false;
